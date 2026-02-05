@@ -17,14 +17,11 @@
   </head>
   <body>
     <p>
-      <a href="/ui/artifacts">← Gallery</a>
-      <span class="muted"> | </span>
-      <a href="/ui/search">Search</a>
-      <span class="muted"> | </span>
-      <a href="/review">Review</a>
+      {% set page_title = "Artifact #{}".format(artifact.id) %}
+      {% include "_nav.html" %}
+
     </p>
 
-    <h1>Artifact #{{ artifact.id }}</h1>
     <div class="muted">
       kind={{ artifact.kind }} · mime={{ artifact.mime_type or "?" }} · created={{ artifact.created_at }}
     </div>
