@@ -17,6 +17,12 @@ from backend.app.db import get_db
 from backend.app.services.scoring_cache import get_or_compute_building_score
 from backend.app.services.storage import build_artifact_path, to_artifact_url
 
+import zipfile
+from pathlib import Path
+import io
+
+
+
 templates = Jinja2Templates(directory="backend/app/templates")
 router = APIRouter()
 
@@ -228,6 +234,18 @@ def review_park(
         },
     )
 
+def _safe_zip_members(zf: zipfile.ZipFile) -> list[zipfile.ZipInfo]:
+    members: list[zipfile.ZipInfo] = []
+    for info in zf.infolist():
+        if info.is_dir():
+            continue
+        name = (info.filename or "").replace("\\", "/").lstrip("/")
+        # zip-slip protection
+        if ".." in name.split("/"):
+            continue
+        members.append(info)
+    return members
+
 @router.get("/review/buildings/{building_id}")
 def review_building(building_id: int, request: Request, db: Session = Depends(get_db)):
     building = db.get(models.Building, building_id)
@@ -332,37 +350,46 @@ def capture_form(request: Request, db: Session = Depends(get_db)):
 
 @router.post("/capture")
 async def capture_submit(
-    request: Request,
-    park_id: str = Form(""),
-    park_name: str = Form(""),
-    park_location: str = Form(""),
+    park_id: Optional[int] = Form(None),
+    park_name: Optional[str] = Form(None),
+    park_location: Optional[str] = Form(None),
+
     building_name: str = Form(...),
-    building_address: str = Form(""),
-    note_text: str = Form(""),
-    files: list[UploadFile] = File(default=[]),
+    building_address: Optional[str] = Form(None),
+
+    note_text: Optional[str] = Form(None),
+
+    files: List[UploadFile] = File(default=[]),
+    zip_file: Optional[UploadFile] = File(default=None),
+
     db: Session = Depends(get_db),
 ):
-    pid = _clean_int(park_id)
-    park = db.get(models.IndustrialPark, pid) if pid else None
-    if not park:
-        if not park_name.strip():
+    # --- choose/create park ---
+    park: Optional[models.IndustrialPark] = None
+    if park_id:
+        park = db.get(models.IndustrialPark, int(park_id))
+        if not park:
+            raise HTTPException(status_code=404, detail="site not found")
+    else:
+        pn = (park_name or "").strip()
+        if not pn:
             raise HTTPException(status_code=400, detail="provide park_id or park_name")
-        park = models.IndustrialPark(name=park_name.strip(), location=park_location.strip() or None, created_at=datetime.utcnow())
+        park = models.IndustrialPark(name=pn, location=(park_location or "").strip() or None)
         db.add(park)
         db.commit()
         db.refresh(park)
 
+    # --- create building ---
     building = models.Building(
         industrial_park_id=park.id,
         name=building_name.strip(),
-        address=building_address.strip() or None,
-        created_at=datetime.utcnow(),
-        status="new",
+        address=(building_address or "").strip() or None,
     )
     db.add(building)
     db.commit()
     db.refresh(building)
 
+    # --- optional note as a text artifact ---
     if note_text and note_text.strip():
         a = models.Artifact(
             industrial_park_id=park.id,
@@ -371,22 +398,35 @@ async def capture_submit(
             mime_type="text/plain",
             original_filename=None,
             storage_path=None,
-            text_content=note_text.strip(),
+            text_content=note_text,
             status="uploaded",
         )
         db.add(a)
         db.commit()
+        db.refresh(a)
+        enqueue_job(db, a.id, "extract_text")
 
-    for f in files or []:
-        if not f.filename:
-            continue
-        kind = _infer_kind_from_upload(f)
+    # --- helper to create a file artifact from bytes ---
+    def _guess_kind(mime: Optional[str], filename: str) -> str:
+        m = (mime or "").lower()
+        fn = (filename or "").lower()
+        if m == "application/pdf" or fn.endswith(".pdf"):
+            return "pdf"
+        if m.startswith("image/"):
+            return "image"
+        if m.startswith("audio/"):
+            return "audio"
+        if m.startswith("video/"):
+            return "video"
+        return "file"
+
+    async def _create_file_artifact(filename: str, content_type: Optional[str], blob: bytes):
         artifact = models.Artifact(
             industrial_park_id=park.id,
             building_id=building.id,
-            kind=kind,
-            mime_type=f.content_type,
-            original_filename=f.filename,
+            kind=_guess_kind(content_type, filename),
+            mime_type=content_type,
+            original_filename=filename,
             storage_path="PENDING",
             status="uploaded",
         )
@@ -394,21 +434,56 @@ async def capture_submit(
         db.commit()
         db.refresh(artifact)
 
-        try:
-            contents = await f.read()
-            path = build_artifact_path(artifact.id, f.filename)
-            path.write_bytes(contents)
-        finally:
-            await f.close()
-
+        path = build_artifact_path(artifact.id, filename)
+        path.write_bytes(blob)
         artifact.storage_path = to_artifact_url(path)
-        artifact.bytes_size = len(contents)
+
         db.add(artifact)
         db.commit()
+        db.refresh(artifact)
 
-    return RedirectResponse(url=f"/review/buildings/{building.id}", status_code=303)
+        enqueue_job(db, artifact.id, "extract_text")
 
+    # --- direct files ---
+    for f in files or []:
+        if not f or not f.filename:
+            continue
+        blob = await f.read()
+        await f.close()
+        if blob:
+            await _create_file_artifact(f.filename, f.content_type, blob)
 
+    # --- zip upload (optional) ---
+    if zip_file and zip_file.filename:
+        if not zip_file.filename.lower().endswith(".zip"):
+            raise HTTPException(status_code=400, detail="zip_file must be a .zip")
+
+        zip_blob = await zip_file.read()
+        await zip_file.close()
+
+        # Basic size guard (tune as needed)
+        if len(zip_blob) > 200 * 1024 * 1024:
+            raise HTTPException(status_code=400, detail="zip too large (max 200MB)")
+
+        with zipfile.ZipFile(io.BytesIO(zip_blob)) as zf:
+            members = _safe_zip_members(zf)
+
+            # Guard: max number of files
+            if len(members) > 300:
+                raise HTTPException(status_code=400, detail="zip contains too many files (max 300)")
+
+            for info in members:
+                name = info.filename.replace("\\", "/").lstrip("/")
+                # Skip hidden/system files
+                if name.split("/")[-1].startswith("."):
+                    continue
+                data = zf.read(info)
+                if not data:
+                    continue
+                # Content-type unknown from zip; guess by extension
+                await _create_file_artifact(Path(name).name, None, data)
+
+    return RedirectResponse(url=f"/review/buildings/{building.id}", status_code=HTTP_303_SEE_OTHER)
 
 def _clean_int(s: str | None) -> Optional[int]:
     if not s:

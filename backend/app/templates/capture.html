@@ -5,64 +5,158 @@
     <title>Powertown MVP — Capture</title>
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <style>
-      body { font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; margin: 20px; max-width: 900px; }
-      label { display:block; margin-top: 12px; font-weight: 600; }
-      input, select, textarea { width: 100%; padding: 10px; margin-top: 6px; }
-      .row { display:flex; gap: 12px; }
-      .row > div { flex: 1; }
-      button { margin-top: 16px; padding: 12px 16px; font-weight: 600; cursor: pointer; }
-      small { color: #555; }
-      .card { border: 1px solid #ddd; border-radius: 10px; padding: 14px; margin-top: 16px; }
-      .muted { color: #666; }
+      :root { --border:#e6e6e6; --muted:#666; --bg:#fafafa; }
+      body { font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; margin: 20px; max-width: 980px; }
+      a { text-decoration: none; }
+      a:hover { text-decoration: underline; }
+      .muted { color: var(--muted); }
+      .card { border: 1px solid var(--border); border-radius: 16px; padding: 16px; background: #fff; margin-top: 14px; }
+      .topbar { display:flex; justify-content: space-between; align-items: baseline; gap: 12px; flex-wrap: wrap; }
+      .btn { display:inline-block; padding: 10px 14px; border:1px solid var(--border); border-radius: 12px; background:#fff; font-weight: 600; }
+      .btn.primary { background:#111; color:#fff; border-color:#111; }
+      label { display:block; margin-top: 12px; font-weight: 700; }
+      input, select, textarea { width: 100%; padding: 10px; margin-top: 6px; border-radius: 12px; border: 1px solid var(--border); }
+      textarea { resize: vertical; }
+      .grid { display:grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+      @media (max-width: 850px) { .grid { grid-template-columns: 1fr; } }
+      .help { font-size: 13px; color: var(--muted); margin-top: 6px; }
+      .pill { display:inline-block; padding: 3px 10px; border:1px solid var(--border); border-radius: 999px; font-size: 12px; background: var(--bg); }
+      .hr { height: 1px; background: var(--border); margin: 14px 0; }
+      .row { display:flex; gap: 10px; flex-wrap: wrap; align-items: center; }
+      .kbd { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; background: #f3f3f3; padding: 2px 6px; border-radius: 8px; border: 1px solid var(--border); }
+
+      .drop {
+        border: 1px dashed #cfcfcf; border-radius: 16px; padding: 14px; background: var(--bg);
+      }
+      .drop strong { display:block; margin-bottom: 4px; }
+      .filelist { margin-top: 10px; font-size: 13px; color: var(--muted); }
+      .filelist li { margin: 4px 0; }
     </style>
   </head>
+
   <body>
-    <h1>Field Capture</h1>
-    <p><small>Create (or select) a site + building, then attach evidence artifacts (notes, photos, PDFs, CAD, audio, etc.).</small></p>
-    <p><a href="/review">Review sites</a>
-    <span class="muted"> | </span>
-    <a href="/bulk">Bulk upload</a></p>
+    <div class="topbar">
+      <div>
+        <h1 style="margin:0;">Field Capture</h1>
+        <div class="muted" style="margin-top: 6px;">
+          Create or select a site + building, then attach evidence artifacts (notes, photos, PDFs, audio, etc.).
+        </div>
+      </div>
+      <div class="row">
+        <a class="btn" href="/review">← Review</a>
+        <a class="btn" href="/ui/artifacts">Artifact Gallery</a>
+        <a class="btn" href="/ui/search">Search</a>
+        <a class="btn" href="/docs" target="_blank">API Docs</a>
+      </div>
+    </div>
 
     <form class="card" action="/capture" method="post" enctype="multipart/form-data">
-      <h2>Site</h2>
+      <div class="row" style="justify-content: space-between;">
+        <div>
+          <strong>Where is this evidence associated?</strong>
+          <div class="help">Attach to a site and a building. (Artifacts can also be uploaded later.)</div>
+        </div>
+        <span class="pill">MVP</span>
+      </div>
 
-      <label>Choose an existing site (optional)</label>
-      <select name="park_id">
-        <option value="">— Select —</option>
-        {% for p in parks %}
-          <option value="{{ p.id }}">{{ p.name }}{% if p.location %} ({{ p.location }}){% endif %}</option>
-        {% endfor %}
-      </select>
+      <div class="hr"></div>
 
-      <label>Or enter a new site name</label>
-      <input name="park_name" placeholder="e.g. Fall River Industrial Park" />
+      <div class="grid">
+        <div>
+          <label>Choose existing site (optional)</label>
+          <select name="park_id">
+            <option value="">— Select a site —</option>
+            {% for p in parks %}
+              <option value="{{ p.id }}">{{ p.name }}{% if p.location %} ({{ p.location }}){% endif %}</option>
+            {% endfor %}
+          </select>
 
-      <label>Site location (optional)</label>
-      <input name="park_location" placeholder="e.g. Fall River, MA" />
+          <label>Or create a new site</label>
+          <input name="park_name" placeholder="e.g. Fall River Industrial Park" />
+          <div class="help">If you pick an existing site above, new site fields are ignored.</div>
 
-      <h2>Building</h2>
+          <label>Site location (optional)</label>
+          <input name="park_location" placeholder="e.g. Fall River, MA" />
+        </div>
 
-      <label>Building name</label>
-      <input name="building_name" required placeholder="e.g. Matouk Factory" />
+        <div>
+          <label>Building name</label>
+          <input name="building_name" required placeholder="e.g. Matouk Factory" />
 
-      <label>Address / notes (optional)</label>
-      <input name="building_address" placeholder="e.g. approx address or landmark" />
+          <label>Address / notes (optional)</label>
+          <input name="building_address" placeholder="e.g. approximate address or landmark" />
 
-      <h2>Artifacts</h2>
+          <label>Optional note</label>
+          <textarea name="note_text" rows="6" placeholder="What did you see? Load indicators? Electrical infrastructure? Space? Contacts?"></textarea>
+          <div class="help">Notes are stored as a text artifact and scored immediately.</div>
+        </div>
+      </div>
 
-      <label>Note (optional)</label>
-      <textarea name="note_text" rows="5" placeholder="What did you see? Load indicators? Electrical infrastructure? Space? Contacts?"></textarea>
+      <div class="hr"></div>
 
-      <label>Upload files (0+)</label>
-      <input type="file" name="files" multiple />
+      <h2 style="margin:0;">Artifacts</h2>
+      <div class="help">Upload files directly, or upload a <strong>.zip</strong> containing a folder of artifacts.</div>
 
-      <button type="submit">Submit</button>
+      <div class="grid" style="margin-top: 10px;">
+        <div class="drop">
+          <strong>Upload files (multiple)</strong>
+          <div class="help">PDFs, images, audio, videos, CAD, etc.</div>
+          <input id="files" type="file" name="files" multiple />
+          <ul id="files_list" class="filelist"></ul>
+        </div>
+
+        <div class="drop">
+          <strong>Upload ZIP (optional)</strong>
+          <div class="help">
+            Zip a folder and upload once. We’ll extract and create one artifact per file.<br/>
+            Tip: keep it under a few hundred files for demos.
+          </div>
+          <input id="zip_file" type="file" name="zip_file" accept=".zip,application/zip" />
+          <div id="zip_hint" class="help"></div>
+        </div>
+      </div>
+
+      <div class="row" style="margin-top: 14px;">
+        <button class="btn primary" type="submit">Submit capture</button>
+        <span class="help">After submitting, you’ll be redirected to the building dossier.</span>
+      </div>
+
+      <div class="help" style="margin-top: 10px;">
+        If you want bulk ingest across many buildings/sites, use the dedicated bulk flow.
+      </div>
     </form>
 
-    <p>
-      <small>
-        After submitting, you’ll be redirected to the building dossier.
-      </small>
-    </p>
+    <script>
+      const files = document.getElementById("files");
+      const filesList = document.getElementById("files_list");
+      const zipFile = document.getElementById("zip_file");
+      const zipHint = document.getElementById("zip_hint");
+
+      function renderList(input, target) {
+        target.innerHTML = "";
+        if (!input.files || input.files.length === 0) return;
+        const max = Math.min(input.files.length, 12);
+        for (let i = 0; i < max; i++) {
+          const f = input.files[i];
+          const li = document.createElement("li");
+          li.textContent = `${f.name} (${Math.round(f.size/1024)} KB)`;
+          target.appendChild(li);
+        }
+        if (input.files.length > max) {
+          const li = document.createElement("li");
+          li.textContent = `…and ${input.files.length - max} more`;
+          target.appendChild(li);
+        }
+      }
+
+      files.addEventListener("change", () => renderList(files, filesList));
+      zipFile.addEventListener("change", () => {
+        if (zipFile.files && zipFile.files[0]) {
+          zipHint.textContent = `Selected: ${zipFile.files[0].name} (${Math.round(zipFile.files[0].size/1024)} KB)`;
+        } else {
+          zipHint.textContent = "";
+        }
+      });
+    </script>
   </body>
 </html>
