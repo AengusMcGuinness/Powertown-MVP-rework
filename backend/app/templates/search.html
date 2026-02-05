@@ -1,33 +1,159 @@
 <!doctype html>
 <html>
+  <head>
+    <meta charset="utf-8" />
+    <title>Search</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <style>
+      body { font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; margin: 20px; max-width: 1200px; }
+      .muted { color: #666; }
+      .card { border: 1px solid #ddd; border-radius: 12px; padding: 14px; margin-top: 14px; }
+      .row { display: grid; grid-template-columns: 2fr 1fr 1fr 120px; gap: 10px; }
+      @media (max-width: 900px) { .row { grid-template-columns: 1fr; } }
+      input, select { padding: 10px; width: 100%; }
+      button { padding: 10px 14px; font-weight: 600; }
+      a { text-decoration: none; }
+      .pill { display:inline-block; padding: 2px 8px; border-radius: 999px; background:#f2f2f2; font-size: 12px; margin-right: 6px; }
+      .hit { margin-top: 10px; padding-top: 10px; border-top: 1px solid #eee; }
+      mark { background: #fff3b0; padding: 0 2px; border-radius: 4px; }
+      .snippet { background: #f7f7f7; padding: 10px; border-radius: 10px; margin-top: 8px; }
+      .actions { display:flex; gap:10px; flex-wrap: wrap; margin-top: 8px; }
+      .h2 { font-size: 18px; margin: 0; }
+    </style>
+  </head>
   <body>
-    <h2>Search</h2>
-    <form method="get">
-      <input name="q" value="{{ q }}" placeholder="Search artifacts, text, claims..." size="60"/>
-      <button type="submit">Search</button>
+    <p>
+      <a href="/review">← Review</a>
+      <span class="muted"> | </span>
+      <a href="/ui/artifacts">Gallery</a>
+    </p>
+
+    <h1>Search</h1>
+    <div class="muted">Search across artifact filenames/metadata, extracted text, and extracted claims.</div>
+
+    <form method="get" action="/ui/search" class="card">
+      <div class="row">
+        <div>
+          <label><strong>Query</strong></label>
+          <input name="q" value="{{ q }}" placeholder="e.g. interconnection, PJM, transformer, POI..." />
+        </div>
+        <div>
+          <label><strong>Park ID (optional)</strong></label>
+          <input name="park_id" value="{{ park_id or '' }}" placeholder="e.g. 1" />
+        </div>
+        <div>
+          <label><strong>Building ID (optional)</strong></label>
+          <input name="building_id" value="{{ building_id or '' }}" placeholder="e.g. 12" />
+        </div>
+        <div style="align-self:end;">
+          <button type="submit">Search</button>
+        </div>
+      </div>
+      <div class="muted" style="margin-top:10px;">
+        Mode: <code>{{ mode }}</code> (keyword for now; NL can be layered later)
+      </div>
     </form>
 
-    {% if results %}
-      <h3>Artifacts</h3>
-      <ul>
-        {% for a in results.artifacts %}
-          <li>#{{a.id}} ({{a.kind}}) {{a.filename}} — {{a.storage_path}}</li>
-        {% endfor %}
-      </ul>
+    {% if q %}
+      <!-- Artifact metadata hits -->
+      <div class="card">
+        <h2 class="h2">Artifacts</h2>
+        {% if results.artifact_matches|length == 0 %}
+          <div class="muted">No artifact metadata matches.</div>
+        {% else %}
+          {% for a in results.artifact_matches %}
+            <div class="hit">
+              <div>
+                <span class="pill">#{{ a.id }}</span>
+                <span class="pill">{{ a.kind }}</span>
+                {% if a.building_id %}<span class="pill">bldg {{ a.building_id }}</span>{% endif %}
+              </div>
+              <div style="margin-top:6px;">
+                <strong>{{ a.original_filename or "(text artifact)" }}</strong>
+              </div>
+              <div class="actions">
+                <a href="/ui/artifacts/{{ a.id }}">Details</a>
+                {% if a.storage_path %}<a href="{{ a.storage_path }}" target="_blank">Open file</a>{% endif %}
+              </div>
+            </div>
+          {% endfor %}
+        {% endif %}
+      </div>
 
-      <h3>Claims</h3>
-      <ul>
-        {% for c in results.claims %}
-          <li>artifact {{c.artifact_id}} — <b>{{c.field_key}}</b> = {{c.value}} ({{c.confidence}})</li>
-        {% endfor %}
-      </ul>
+      <!-- Claim hits -->
+      <div class="card">
+        <h2 class="h2">Claims</h2>
+        {% if results.claim_matches|length == 0 %}
+          <div class="muted">No claim matches.</div>
+        {% else %}
+          {% for row in results.claim_matches %}
+            {% set c = row.claim %}
+            {% set a = row.artifact %}
+            <div class="hit">
+              <div>
+                {% if a %}
+                  <span class="pill">artifact #{{ a.id }}</span>
+                  <span class="pill">{{ a.kind }}</span>
+                {% else %}
+                  <span class="pill">artifact #{{ c.artifact_id }}</span>
+                {% endif %}
+                <span class="pill">conf {{ "%.2f"|format(c.confidence or 0) }}</span>
+              </div>
+              <div style="margin-top:6px;">
+                <code>{{ c.field_key }}</code>
+                <span class="muted">→</span>
+                <code>{{ c.value_json }}</code>
+                {% if c.unit %}<span class="muted">({{ c.unit }})</span>{% endif %}
+              </div>
+              <div class="actions">
+                <a href="/ui/artifacts/{{ c.artifact_id }}">Details</a>
+              </div>
+            </div>
+          {% endfor %}
+        {% endif %}
+      </div>
 
-      <h3>Text matches</h3>
-      <ul>
-        {% for s in results.segments %}
-          <li>artifact {{s.artifact_id}} seg {{s.segment_index}} — {{s.snippet}}</li>
-        {% endfor %}
-      </ul>
+      <!-- Text matches grouped by artifact -->
+      <div class="card">
+        <h2 class="h2">Text matches</h2>
+        {% if results.text_groups|length == 0 %}
+          <div class="muted">No extracted text matches.</div>
+        {% else %}
+          {% for g in results.text_groups %}
+            {% set a = g.artifact %}
+            <div class="hit">
+              <div>
+                <span class="pill">#{{ a.id }}</span>
+                <span class="pill">{{ a.kind }}</span>
+                {% if a.building_id %}<span class="pill">bldg {{ a.building_id }}</span>{% endif %}
+              </div>
+              <div style="margin-top:6px;">
+                <strong>{{ a.original_filename or "(text artifact)" }}</strong>
+              </div>
+
+              {% for m in g.matches %}
+                <div class="snippet">
+                  <div class="muted" style="margin-bottom:6px;">
+                    <a href="/ui/artifacts/{{ a.id }}#seg-{{ m.segment_index }}">View in document</a>
+                  </div>
+                  <div>{{ m.snippet_html|safe }}</div>
+                </div>
+              {% endfor %}
+
+              {% if g.more_count > 0 %}
+                <div class="muted" style="margin-top:8px;">
+                  + {{ g.more_count }} more matching segment(s) for this artifact (showing top 3)
+                </div>
+              {% endif %}
+
+              <div class="actions">
+                <a href="/ui/artifacts/{{ a.id }}">Details</a>
+                {% if a.storage_path %}<a href="{{ a.storage_path }}" target="_blank">Open file</a>{% endif %}
+              </div>
+            </div>
+          {% endfor %}
+        {% endif %}
+      </div>
     {% endif %}
   </body>
 </html>
