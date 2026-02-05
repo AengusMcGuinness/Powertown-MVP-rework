@@ -1,0 +1,109 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>Artifact Search</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <style>
+      body { font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; margin: 20px; max-width: 1100px; }
+      .muted { color: #666; }
+      .card { border: 1px solid #ddd; border-radius: 12px; padding: 14px; margin-top: 14px; }
+      input, select { padding: 10px; margin-top: 8px; width: 100%; }
+      table { width: 100%; border-collapse: collapse; }
+      td, th { padding: 8px; border-bottom: 1px solid #eee; vertical-align: top; }
+      code, pre { background: #f6f6f6; border-radius: 8px; padding: 6px; display: inline-block; }
+      a { text-decoration: none; }
+      button { padding: 10px 14px; font-weight: 600; }
+    </style>
+  </head>
+  <body>
+    <p>
+      <a href="/review">← Review</a>
+    </p>
+
+    <h1>Search Artifacts & Claims</h1>
+    <div class="muted">Keyword search (fast) or Natural language (LLM → claim filters).</div>
+
+    <form method="get" action="/ui/search" class="card">
+      <label><strong>Query</strong></label>
+      <input name="q" value="{{ q }}" placeholder="e.g. 12.47kV, transformer, upgrade cost, substation..." />
+
+      <label style="margin-top: 10px;"><strong>Mode</strong></label>
+      <select name="mode">
+        <option value="kw" {% if mode == "kw" %}selected{% endif %}>Keyword</option>
+        <option value="nl" {% if mode == "nl" %}selected{% endif %}>Natural language</option>
+      </select>
+
+      <label style="margin-top: 10px;"><strong>building_id (optional)</strong></label>
+      <input name="building_id" value="{{ building_id or '' }}" placeholder="e.g. 1" />
+
+      <button type="submit" style="margin-top: 10px;">Search</button>
+    </form>
+
+    {% if results %}
+      <div class="card">
+        <div><strong>Mode:</strong> {{ results.mode }}</div>
+        {% if results.filters %}
+          <div class="muted" style="margin-top: 8px;"><strong>NL filters:</strong></div>
+          <pre>{{ results.filters }}</pre>
+        {% endif %}
+      </div>
+
+      <div class="card">
+        <h3>Artifacts</h3>
+        {% if results.artifacts and results.artifacts|length > 0 %}
+          <table>
+            <tr><th>ID</th><th>Kind</th><th>Filename</th><th>Storage</th></tr>
+            {% for a in results.artifacts %}
+              <tr>
+                <td><a href="/ui/artifacts/{{ a.id }}">#{{ a.id }}</a></td>
+                <td>{{ a.kind }}</td>
+                <td class="muted">{{ a.filename or "" }}</td>
+                <td class="muted">{{ a.storage_path or "" }}</td>
+              </tr>
+            {% endfor %}
+          </table>
+        {% else %}
+          <div class="muted">No artifact hits.</div>
+        {% endif %}
+      </div>
+
+      <div class="card">
+        <h3>Claims</h3>
+        {% if results.claims and results.claims|length > 0 %}
+          <table>
+            <tr><th>Artifact</th><th>Key</th><th>Value</th><th>Conf</th></tr>
+            {% for c in results.claims %}
+              <tr>
+                <td><a href="/ui/artifacts/{{ c.artifact_id }}">artifact {{ c.artifact_id }}</a></td>
+                <td><code>{{ c.field_key }}</code></td>
+                <td><pre>{{ c.value }}</pre></td>
+                <td>{{ "%.2f"|format(c.confidence or 0.0) }}</td>
+              </tr>
+            {% endfor %}
+          </table>
+        {% else %}
+          <div class="muted">No claim hits.</div>
+        {% endif %}
+      </div>
+
+      <div class="card">
+        <h3>Text matches</h3>
+        {% if results.segments and results.segments|length > 0 %}
+          <table>
+            <tr><th>Artifact</th><th>Segment</th><th>Snippet</th></tr>
+            {% for s in results.segments %}
+              <tr>
+                <td><a href="/ui/artifacts/{{ s.artifact_id }}">artifact {{ s.artifact_id }}</a></td>
+                <td>{{ s.segment_index }}</td>
+                <td class="muted">{{ s.snippet }}</td>
+              </tr>
+            {% endfor %}
+          </table>
+        {% else %}
+          <div class="muted">No text hits.</div>
+        {% endif %}
+      </div>
+    {% endif %}
+  </body>
+</html>

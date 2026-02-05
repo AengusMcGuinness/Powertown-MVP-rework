@@ -1,0 +1,131 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>Artifact Gallery</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <style>
+      body { font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; margin: 20px; max-width: 1200px; }
+      .muted { color: #666; }
+      .card { border: 1px solid #ddd; border-radius: 12px; padding: 14px; margin-top: 14px; }
+      .grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; }
+      @media (max-width: 900px) { .grid { grid-template-columns: repeat(2, 1fr); } }
+      @media (max-width: 600px) { .grid { grid-template-columns: 1fr; } }
+      .item { border: 1px solid #eee; border-radius: 12px; padding: 12px; }
+      .thumb { width: 100%; height: 160px; border-radius: 10px; background: #f3f3f3; display: flex; align-items: center; justify-content: center; overflow: hidden; }
+      .thumb img { width: 100%; height: 100%; object-fit: cover; }
+      input, select { padding: 10px; width: 100%; }
+      button { padding: 10px 14px; font-weight: 600; }
+      .row { display: grid; grid-template-columns: 2fr 1fr 1fr 1fr; gap: 10px; }
+      @media (max-width: 900px) { .row { grid-template-columns: 1fr; } }
+      a { text-decoration: none; }
+      .pill { display:inline-block; padding: 2px 8px; border-radius: 999px; background:#f2f2f2; font-size: 12px; margin-right: 6px; }
+    </style>
+  </head>
+  <body>
+    <p>
+      <a href="/review">← Review</a>
+      <span class="muted"> | </span>
+      <a href="/ui/search">Search</a>
+    </p>
+
+    <h1>Artifact Gallery</h1>
+    <div class="muted">Search hits include filenames, extracted text, and claim values.</div>
+
+    <form method="get" action="/ui/artifacts" class="card">
+      <div class="row">
+        <div>
+          <label><strong>Query</strong></label>
+          <input name="q" value="{{ q }}" placeholder="e.g. PJM, transformer, 12.47, interconnection..." />
+        </div>
+
+        <div>
+          <label><strong>Park</strong></label>
+          <select name="park_id">
+            <option value="">(any)</option>
+            {% for p in parks %}
+              <option value="{{ p.id }}" {% if park_id == p.id %}selected{% endif %}>
+                {{ p.name }}
+              </option>
+            {% endfor %}
+          </select>
+        </div>
+
+        <div>
+          <label><strong>Building</strong></label>
+          <input name="building_id" value="{{ building_id or '' }}" placeholder="(optional id)" />
+        </div>
+
+        <div>
+          <label><strong>Kind</strong></label>
+          <select name="kind">
+            <option value="" {% if not kind %}selected{% endif %}>(any)</option>
+            <option value="pdf" {% if kind == "pdf" %}selected{% endif %}>pdf</option>
+            <option value="image" {% if kind == "image" %}selected{% endif %}>image</option>
+            <option value="text" {% if kind == "text" %}selected{% endif %}>text</option>
+            <option value="file" {% if kind == "file" %}selected{% endif %}>file</option>
+          </select>
+        </div>
+      </div>
+
+      <div style="display:flex; gap:10px; margin-top: 12px;">
+        <button type="submit">Apply</button>
+        <a href="/ui/artifacts" class="muted" style="align-self:center;">Reset</a>
+      </div>
+
+      <div class="muted" style="margin-top:10px;">
+        Total: {{ total }} · Page {{ page }} / {{ page_count }}
+      </div>
+    </form>
+
+    <div class="card">
+      <div class="grid">
+        {% for a in artifacts %}
+          <div class="item">
+            <div class="thumb">
+              {% if a.kind == "image" and a.storage_path %}
+                <img src="{{ a.storage_path }}" />
+              {% else %}
+                <div class="muted">{{ a.kind }}</div>
+              {% endif %}
+            </div>
+
+            <div style="margin-top: 10px;">
+              <div>
+                <span class="pill">#{{ a.id }}</span>
+                <span class="pill">{{ a.kind }}</span>
+                {% if a.building_id %}<span class="pill">bldg {{ a.building_id }}</span>{% endif %}
+                {% if claim_counts.get(a.id) %}<span class="pill">{{ claim_counts.get(a.id) }} claims</span>{% endif %}
+              </div>
+              <div style="margin-top: 6px;">
+                <strong>{{ a.original_filename or "(text artifact)" }}</strong>
+              </div>
+              <div class="muted" style="margin-top: 6px;">
+                {{ a.created_at }}
+              </div>
+
+              <div style="display:flex; gap:10px; margin-top: 10px; flex-wrap: wrap;">
+                <a href="/ui/artifacts/{{ a.id }}">Details</a>
+                {% if a.storage_path %}
+                  <a href="{{ a.storage_path }}" target="_blank">Open file</a>
+                {% endif %}
+              </div>
+            </div>
+          </div>
+        {% endfor %}
+      </div>
+
+      {% if page_count > 1 %}
+        <div style="display:flex; gap:10px; margin-top: 14px;">
+          {% if page > 1 %}
+            <a href="/ui/artifacts?q={{ q }}&park_id={{ park_id or '' }}&building_id={{ building_id or '' }}&kind={{ kind }}&page={{ page-1 }}&page_size={{ page_size }}">← Prev</a>
+          {% endif %}
+          <div class="muted" style="align-self:center;">Page {{ page }} / {{ page_count }}</div>
+          {% if page < page_count %}
+            <a href="/ui/artifacts?q={{ q }}&park_id={{ park_id or '' }}&building_id={{ building_id or '' }}&kind={{ kind }}&page={{ page+1 }}&page_size={{ page_size }}">Next →</a>
+          {% endif %}
+        </div>
+      {% endif %}
+    </div>
+  </body>
+</html>

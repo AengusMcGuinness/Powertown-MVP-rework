@@ -1,0 +1,54 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>Powertown MVP — Review</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <style>
+      body { font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; margin: 20px; max-width: 950px; }
+      .topbar { display:flex; justify-content: space-between; align-items: baseline; }
+      a { text-decoration: none; }
+      .card { border: 1px solid #ddd; border-radius: 12px; padding: 14px; margin-top: 12px; }
+      .muted { color: #666; }
+      .pill { display:inline-block; padding: 2px 8px; border-radius: 999px; border:1px solid #ddd; margin-left: 8px; font-size: 12px; }
+    </style>
+  </head>
+  <body>
+    <div class="topbar">
+      <h1>Review</h1>
+      <div>
+        <a href="/export/csv">Export CSV</a>
+        <span class="muted"> | </span>
+        <a href="/capture">+ New capture</a>
+        <span class="muted"> | </span>
+        <a href="/docs" target="_blank">API docs</a>
+      </div>
+    </div>
+
+    <p class="muted">Sites (industrial parks), buildings, and evidence artifacts.</p>
+
+    {% if park_cards|length == 0 %}
+      <p class="muted">No sites yet. Start with <a href="/capture">Field Capture</a>.</p>
+    {% endif %}
+
+    {% for c in park_cards %}
+      <div class="card">
+        <div style="display:flex; justify-content: space-between; gap: 12px; align-items: baseline;">
+          <div>
+            <strong><a href="/review/parks/{{ c.park.id }}">{{ c.park.name }}</a></strong>
+            {% if c.park.location %}
+              <span class="muted"> — {{ c.park.location }}</span>
+            {% endif %}
+          </div>
+          <div class="muted" style="text-align:right;">
+            <span class="pill">{{ c.building_count }} buildings</span>
+            <span class="pill">{{ c.artifact_count }} artifacts</span>
+          </div>
+        </div>
+        {% if c.last_activity_at %}
+          <div class="muted" style="margin-top: 8px;">Last artifact: {{ c.last_activity_at }}</div>
+        {% endif %}
+      </div>
+    {% endfor %}
+  </body>
+</html>

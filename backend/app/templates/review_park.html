@@ -1,0 +1,97 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>Powertown MVP — Review Site</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <style>
+      body { font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; margin: 20px; max-width: 900px; }
+      a { text-decoration: none; }
+      .card { border: 1px solid #ddd; border-radius: 10px; padding: 14px; margin-top: 12px; }
+      .muted { color: #666; }
+      .pill { display:inline-block; padding: 2px 8px; border: 1px solid #ddd; border-radius: 999px; font-size: 12px; margin-left: 8px; }
+    </style>
+  </head>
+  <body>
+    <h1>{{ park.name }}</h1>
+    <p class="muted">{{ park.location or "" }}</p>
+
+    <p>
+      <a href="/review">← Back to all sites</a>
+      <span class="muted"> | </span>
+      <a href="/capture">+ New capture</a>
+      <span class="muted"> | </span>
+      <a href="/export/csv?park_id={{ park.id }}">Export CSV</a>
+    </p>
+
+    <div class="card">
+      <div><strong>Top candidates</strong></div>
+      {% if top_candidates|length == 0 %}
+        <p class="muted">No buildings yet.</p>
+      {% endif %}
+
+      {% for c in top_candidates %}
+        <div style="display:flex; justify-content: space-between; gap: 10px; margin-top: 10px;">
+          <div>
+            <strong><a href="/review/buildings/{{ c.building.id }}">{{ c.building.name }}</a></strong>
+            <div class="muted">{{ c.building.address or "" }}</div>
+            {% if c.score.drivers and c.score.drivers|length > 0 %}
+              <div class="muted">{{ c.score.drivers[0] }}{% if c.score.drivers|length > 1 %}, {{ c.score.drivers[1] }}{% endif %}</div>
+            {% endif %}
+          </div>
+          <div style="text-align:right;">
+            <div style="font-size: 18px; font-weight: 700;">{{ c.score.score }}/100</div>
+            <div class="muted">{{ c.score.confidence }}</div>
+          </div>
+        </div>
+      {% endfor %}
+    </div>
+
+    <div class="card">
+      <div style="display:flex; justify-content: space-between; align-items: baseline;">
+        <div><strong>Buildings</strong></div>
+        <div class="muted">{{ building_cards|length }} total</div>
+      </div>
+
+      {% if building_cards|length == 0 %}
+        <p class="muted">No buildings yet.</p>
+      {% endif %}
+
+      {% for c in building_cards %}
+        <div style="margin-top: 12px; padding-top: 12px; border-top: 1px solid #eee;">
+          <div style="display:flex; justify-content: space-between; gap: 10px;">
+            <div>
+              <strong><a href="/review/buildings/{{ c.building.id }}">{{ c.building.name }}</a></strong>
+              <div class="muted">{{ c.building.address or "" }}</div>
+            </div>
+            <div style="text-align:right;">
+              <div style="font-size: 18px; font-weight: 700;">{{ c.score.score }}/100</div>
+              <div class="muted">{{ c.score.confidence }}</div>
+              <div class="muted"><span class="pill">{{ c.artifact_count }} artifacts</span></div>
+            </div>
+          </div>
+        </div>
+      {% endfor %}
+    </div>
+
+    <div class="card">
+      <div><strong>Recent artifacts</strong></div>
+      {% if recent_artifacts|length == 0 %}
+        <p class="muted">No artifacts yet.</p>
+      {% endif %}
+      {% for a in recent_artifacts %}
+        <div style="margin-top: 12px; padding-top: 12px; border-top: 1px solid #eee;">
+          <div class="muted">{{ a.created_at }} — <span class="pill">{{ a.kind }}</span></div>
+          {% if a.building_id and building_by_id.get(a.building_id) %}
+            <div><a href="/review/buildings/{{ a.building_id }}"><strong>{{ building_by_id[a.building_id].name }}</strong></a></div>
+          {% endif %}
+          {% if a.kind == "text" and a.text_content %}
+            <div style="margin-top: 6px; white-space: pre-wrap;">{{ a.text_content[:240] }}{% if a.text_content|length > 240 %}…{% endif %}</div>
+          {% elif a.original_filename %}
+            <div style="margin-top: 6px;" class="muted">{{ a.original_filename }}</div>
+          {% endif %}
+        </div>
+      {% endfor %}
+    </div>
+  </body>
+</html>

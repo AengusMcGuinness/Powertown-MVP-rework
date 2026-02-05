@@ -1,0 +1,33 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>Powertown MVP — Report</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <style>
+      body { font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; margin: 20px; max-width: 980px; }
+      .muted { color: #666; }
+      .card { border: 1px solid #ddd; border-radius: 12px; padding: 14px; margin-top: 14px; }
+      a { text-decoration: none; }
+      .ok { color: #0a7; font-weight: 700; }
+      .warn { color: #b60; font-weight: 700; }
+    </style>
+  </head>
+  <body>
+    <h1>Report</h1>
+    <p class="muted">
+      <a href="/review">← Review</a>
+      <span class="muted"> | </span>
+      <a href="/capture">+ New capture</a>
+    </p>
+
+    <div class="card">
+      {% if report.ok %}
+        <div class="ok">OK</div>
+      {% else %}
+        <div class="warn">Notice</div>
+      {% endif %}
+      <p style="margin-top: 10px;">{{ report.message }}</p>
+    </div>
+  </body>
+</html>

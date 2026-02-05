@@ -1,0 +1,62 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>Powertown MVP — Bulk Offline Upload</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <style>
+      body { font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; margin: 20px; max-width: 980px; }
+      .muted { color: #666; }
+      .card { border: 1px solid #ddd; border-radius: 12px; padding: 14px; margin-top: 14px; }
+      code { background: #f6f6f6; padding: 2px 6px; border-radius: 6px; }
+      input { width: 100%; padding: 10px; margin-top: 8px; }
+      button { margin-top: 12px; padding: 10px 14px; font-weight: 600; cursor: pointer; }
+      ul { margin-top: 8px; }
+    </style>
+  </head>
+  <body>
+    <h1>Bulk Offline Upload</h1>
+    <p class="muted">Upload a ZIP containing <code>manifest.csv</code> plus referenced media files.</p>
+
+    <p>
+      <a href="/review">← Review</a>
+      <span class="muted"> | </span>
+      <a href="/capture">+ New capture</a>
+    </p>
+
+    <div class="card">
+      <div><strong>ZIP requirements</strong></div>
+      <ul class="muted">
+        <li>ZIP must contain <code>manifest.csv</code> at the root.</li>
+        <li>CSV columns: <code>park_name</code>, <code>building_name</code> (required)</li>
+        <li>Optional: <code>park_location</code>, <code>building_address</code>, <code>observer</code>, <code>note_text</code>, <code>media_type</code>, <code>files</code></li>
+        <li><code>files</code> is semicolon-separated filenames inside the ZIP.</li>
+      </ul>
+    </div>
+
+    <form class="card" method="post" action="/bulk" enctype="multipart/form-data">
+      <label><strong>Upload ZIP</strong></label>
+      <input type="file" name="zip_file" accept=".zip" required />
+      <button type="submit">Import</button>
+      <p class="muted" style="margin-top: 10px;">
+        Import creates parks/buildings/observations and stores media in local uploads.
+      </p>
+    </form>
+
+    <form class="card" method="post" action="/bulk/csv" enctype="multipart/form-data">
+      <label><strong>Upload CSV (no media)</strong></label>
+      <input type="file" name="csv_file" accept=".csv" required />
+      <button type="submit">Import CSV</button>
+      <p class="muted" style="margin-top: 10px;">
+	CSV-only import creates parks/buildings/observations. No media attachments.
+      </p>
+    </form>
+
+    {% if error %}
+      <div class="card">
+        <div><strong>Error</strong></div>
+        <p class="muted">{{ error }}</p>
+      </div>
+    {% endif %}
+  </body>
+</html>

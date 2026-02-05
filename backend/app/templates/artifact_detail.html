@@ -1,0 +1,105 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>Artifact {{ artifact.id }}</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <style>
+      body { font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; margin: 20px; max-width: 1000px; }
+      .muted { color: #666; }
+      .card { border: 1px solid #ddd; border-radius: 12px; padding: 14px; margin-top: 14px; }
+      pre { white-space: pre-wrap; background: #f7f7f7; padding: 10px; border-radius: 10px; }
+      code { background: #f6f6f6; padding: 2px 6px; border-radius: 6px; }
+      button { padding: 8px 12px; font-weight: 600; }
+      table { width: 100%; border-collapse: collapse; }
+      td, th { border-bottom: 1px solid #eee; padding: 8px; vertical-align: top; }
+    </style>
+  </head>
+  <body>
+    <p>
+      <a href="/ui/artifacts">← Gallery</a>
+      <span class="muted"> | </span>
+      <a href="/ui/search">Search</a>
+      <span class="muted"> | </span>
+      <a href="/review">Review</a>
+    </p>
+
+    <h1>Artifact #{{ artifact.id }}</h1>
+    <div class="muted">
+      kind={{ artifact.kind }} · mime={{ artifact.mime_type or "?" }} · created={{ artifact.created_at }}
+    </div>
+
+    <div class="card">
+      <div><strong>Links</strong></div>
+      {% if artifact.storage_path %}
+        <div><a href="{{ artifact.storage_path }}" target="_blank">Open file</a></div>
+      {% endif %}
+      {% if building %}
+        <div>Building: <a href="/review/buildings/{{ building.id }}">{{ building.name }}</a></div>
+      {% endif %}
+      {% if park %}
+        <div>Park: <a href="/review/parks/{{ park.id }}">{{ park.name }}</a></div>
+      {% endif %}
+    </div>
+
+    <div class="card">
+      <div style="display:flex; justify-content: space-between; align-items:center;">
+        <strong>Actions</strong>
+        <form method="post" action="/ui/artifacts/{{ artifact.id }}/discover">
+          <button type="submit">Run discovery</button>
+        </form>
+      </div>
+      <div class="muted">Discovery creates flexible <code>disc:*</code> claims.</div>
+    </div>
+
+    <div class="card">
+      <strong>Processing jobs</strong>
+      {% if jobs|length == 0 %}
+        <div class="muted">No jobs recorded.</div>
+      {% else %}
+        <table>
+          <tr><th>ID</th><th>Type</th><th>Status</th><th>Attempts</th><th>Error</th></tr>
+          {% for j in jobs %}
+            <tr>
+              <td>{{ j.id }}</td>
+              <td>{{ j.job_type }}</td>
+              <td>{{ j.status }}</td>
+              <td>{{ j.attempts }}</td>
+              <td class="muted">{{ j.last_error or "" }}</td>
+            </tr>
+          {% endfor %}
+        </table>
+      {% endif %}
+    </div>
+
+    <div class="card">
+      <strong>Claims</strong>
+      {% if claims|length == 0 %}
+        <div class="muted">No claims yet.</div>
+      {% else %}
+        <table>
+          <tr><th>Key</th><th>Confidence</th><th>Value JSON</th></tr>
+          {% for c in claims %}
+            <tr>
+              <td><code>{{ c.field_key }}</code></td>
+              <td>{{ "%.2f"|format(c.confidence) }}</td>
+              <td class="muted"><code>{{ c.value_json }}</code></td>
+            </tr>
+          {% endfor %}
+        </table>
+      {% endif %}
+    </div>
+
+    <div class="card">
+      <strong>Extracted text</strong>
+      {% if segments|length == 0 %}
+        <div class="muted">No extracted text segments yet.</div>
+      {% else %}
+        {% for s in segments %}
+          <div class="muted">segment {{ s.segment_index }}</div>
+          <pre>{{ s.text }}</pre>
+        {% endfor %}
+      {% endif %}
+    </div>
+  </body>
+</html>

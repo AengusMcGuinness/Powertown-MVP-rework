@@ -1,0 +1,68 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>Powertown MVP — Capture</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <style>
+      body { font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; margin: 20px; max-width: 900px; }
+      label { display:block; margin-top: 12px; font-weight: 600; }
+      input, select, textarea { width: 100%; padding: 10px; margin-top: 6px; }
+      .row { display:flex; gap: 12px; }
+      .row > div { flex: 1; }
+      button { margin-top: 16px; padding: 12px 16px; font-weight: 600; cursor: pointer; }
+      small { color: #555; }
+      .card { border: 1px solid #ddd; border-radius: 10px; padding: 14px; margin-top: 16px; }
+      .muted { color: #666; }
+    </style>
+  </head>
+  <body>
+    <h1>Field Capture</h1>
+    <p><small>Create (or select) a site + building, then attach evidence artifacts (notes, photos, PDFs, CAD, audio, etc.).</small></p>
+    <p><a href="/review">Review sites</a>
+    <span class="muted"> | </span>
+    <a href="/bulk">Bulk upload</a></p>
+
+    <form class="card" action="/capture" method="post" enctype="multipart/form-data">
+      <h2>Site</h2>
+
+      <label>Choose an existing site (optional)</label>
+      <select name="park_id">
+        <option value="">— Select —</option>
+        {% for p in parks %}
+          <option value="{{ p.id }}">{{ p.name }}{% if p.location %} ({{ p.location }}){% endif %}</option>
+        {% endfor %}
+      </select>
+
+      <label>Or enter a new site name</label>
+      <input name="park_name" placeholder="e.g. Fall River Industrial Park" />
+
+      <label>Site location (optional)</label>
+      <input name="park_location" placeholder="e.g. Fall River, MA" />
+
+      <h2>Building</h2>
+
+      <label>Building name</label>
+      <input name="building_name" required placeholder="e.g. Matouk Factory" />
+
+      <label>Address / notes (optional)</label>
+      <input name="building_address" placeholder="e.g. approx address or landmark" />
+
+      <h2>Artifacts</h2>
+
+      <label>Note (optional)</label>
+      <textarea name="note_text" rows="5" placeholder="What did you see? Load indicators? Electrical infrastructure? Space? Contacts?"></textarea>
+
+      <label>Upload files (0+)</label>
+      <input type="file" name="files" multiple />
+
+      <button type="submit">Submit</button>
+    </form>
+
+    <p>
+      <small>
+        After submitting, you’ll be redirected to the building dossier.
+      </small>
+    </p>
+  </body>
+</html>

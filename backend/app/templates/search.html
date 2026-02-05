@@ -1,0 +1,33 @@
+<!doctype html>
+<html>
+  <body>
+    <h2>Search</h2>
+    <form method="get">
+      <input name="q" value="{{ q }}" placeholder="Search artifacts, text, claims..." size="60"/>
+      <button type="submit">Search</button>
+    </form>
+
+    {% if results %}
+      <h3>Artifacts</h3>
+      <ul>
+        {% for a in results.artifacts %}
+          <li>#{{a.id}} ({{a.kind}}) {{a.filename}} — {{a.storage_path}}</li>
+        {% endfor %}
+      </ul>
+
+      <h3>Claims</h3>
+      <ul>
+        {% for c in results.claims %}
+          <li>artifact {{c.artifact_id}} — <b>{{c.field_key}}</b> = {{c.value}} ({{c.confidence}})</li>
+        {% endfor %}
+      </ul>
+
+      <h3>Text matches</h3>
+      <ul>
+        {% for s in results.segments %}
+          <li>artifact {{s.artifact_id}} seg {{s.segment_index}} — {{s.snippet}}</li>
+        {% endfor %}
+      </ul>
+    {% endif %}
+  </body>
+</html>
