@@ -2,96 +2,385 @@
 <html>
   <head>
     <meta charset="utf-8" />
-    <title>Powertown MVP — Building Dossier</title>
+    <title>Powertown MVP — {{ building.name }}</title>
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <style>
-      body { font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; margin: 20px; max-width: 980px; }
-      .muted { color: #666; }
-      .card { border: 1px solid #ddd; border-radius: 12px; padding: 14px; margin-top: 14px; }
-      img { max-width: 100%; border-radius: 10px; border: 1px solid #eee; }
-      .media-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 10px; margin-top: 10px; }
+      :root {
+        --border:#e6e6e6;
+        --muted:#666;
+        --bg:#fafafa;
+        --card:#fff;
+      }
+
+      body { font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; margin: 20px; max-width: 1100px; }
       a { text-decoration: none; }
-      code { background: #f6f6f6; padding: 2px 6px; border-radius: 6px; }
-      .pill { display:inline-block; padding: 2px 8px; border: 1px solid #ddd; border-radius: 999px; font-size: 12px; margin-left: 8px; }
+      a:hover { text-decoration: underline; }
+      .muted { color: var(--muted); }
+      .pill { display:inline-block; padding: 3px 10px; border:1px solid var(--border); border-radius: 999px; font-size: 12px; background: #fff; }
+      .btn {
+        display:inline-block; padding: 10px 14px; border:1px solid var(--border); border-radius: 10px;
+        background:#fff; font-weight: 600;
+      }
+      .btn.primary { background:#111; color:#fff; border-color:#111; }
+      .btn:active { transform: translateY(1px); }
+      .card { border: 1px solid var(--border); border-radius: 16px; padding: 16px; background: var(--card); }
+      .stack { display:flex; flex-direction:column; gap: 14px; }
+      .grid { display:grid; grid-template-columns: 2fr 1fr; gap: 14px; }
+      @media (max-width: 900px) { .grid { grid-template-columns: 1fr; } }
+      .topbar { display:flex; justify-content: space-between; gap: 12px; align-items: flex-start; }
+      @media (max-width: 900px) { .topbar { flex-direction: column; } }
+
+      .title { font-size: 26px; font-weight: 800; margin: 0; }
+      .sub { margin-top: 6px; color: var(--muted); }
+      .kpi { display:flex; gap: 10px; flex-wrap: wrap; margin-top: 10px; }
+      .kpi .pill { background: var(--bg); }
+
+      .scoreBox {
+        display:flex; align-items: center; justify-content: space-between; gap: 12px;
+        padding: 14px; border-radius: 14px; background: var(--bg); border: 1px solid var(--border);
+      }
+      .scoreNum { font-size: 34px; font-weight: 900; }
+      .scoreMeta { text-align: right; }
+      .drivers { margin: 10px 0 0 0; padding-left: 18px; color: #111; }
+      .drivers li { margin: 4px 0; }
+
+      .toolbar { display:flex; gap: 10px; flex-wrap: wrap; align-items: center; justify-content: space-between; }
+      .toolbarLeft { display:flex; gap: 10px; flex-wrap: wrap; align-items: center; }
+      input, select { padding: 10px; border-radius: 10px; border: 1px solid var(--border); }
+      .row { display:flex; gap: 10px; flex-wrap: wrap; align-items: center; }
+
+      .artRow { display:flex; justify-content: space-between; gap: 10px; align-items: baseline; }
+      .artMeta { display:flex; gap: 8px; flex-wrap: wrap; align-items:center; }
+      .hr { height: 1px; background: var(--border); margin: 12px 0; }
+
+      .thumb {
+        width: 100%;
+        height: 170px;
+        border-radius: 12px;
+        border: 1px solid var(--border);
+        background: #f4f4f4;
+        display:flex; align-items:center; justify-content:center; overflow:hidden;
+      }
+      .thumb img { width: 100%; height: 100%; object-fit: cover; }
+
+      .artifactGrid { display:grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
+      @media (max-width: 950px) { .artifactGrid { grid-template-columns: repeat(2, 1fr); } }
+      @media (max-width: 650px) { .artifactGrid { grid-template-columns: 1fr; } }
+
+      details { border: 1px solid var(--border); border-radius: 14px; padding: 12px; background: #fff; }
+      details summary { cursor: pointer; font-weight: 700; }
+      code { background:#f3f3f3; padding: 2px 6px; border-radius: 8px; }
+      .small { font-size: 13px; }
+
+      .warn { background: #fff7ed; border-color: #fed7aa; }
     </style>
   </head>
-  <body>
-    <h1>{{ building.name }}</h1>
 
-    <div class="card">
-      <div style="display:flex; justify-content: space-between; align-items: center; gap: 12px;">
-        <div>
-          <strong>Status:</strong>
-          <span class="muted">{{ building.status }}</span>
+  <body>
+    <div class="topbar">
+      <div>
+        <h1 class="title">{{ building.name }}</h1>
+        <div class="sub">
+          {% if building.address %}{{ building.address }}{% endif %}
+          <span class="muted"> · </span>
+          <span class="pill">Building #{{ building.id }}</span>
+          <span class="pill">Site #{{ building.industrial_park_id }}</span>
         </div>
 
-        <form method="post" action="/review/buildings/{{ building.id }}/status" style="display:flex; gap: 8px;">
+        <div class="kpi">
+          <span class="pill">Status: <strong>{{ building.status }}</strong></span>
+          <span class="pill">Artifacts: <strong>{{ artifacts|length }}</strong></span>
+          {% if claim_counts is defined %}
+            <span class="pill">Claims: <strong>{{ claim_counts.total or 0 }}</strong></span>
+          {% endif %}
+          {% if segment_counts is defined %}
+            <span class="pill">Text segs: <strong>{{ segment_counts.total or 0 }}</strong></span>
+          {% endif %}
+        </div>
+
+        <div class="row" style="margin-top: 12px;">
+          <a class="btn" href="/review">← Review</a>
+          <a class="btn" href="/review/parks/{{ building.industrial_park_id }}">← Back to site</a>
+          <a class="btn primary" href="/capture">+ New capture</a>
+          <a class="btn" href="/ui/artifacts?building_id={{ building.id }}">Open in Artifact Gallery</a>
+          <a class="btn" href="/ui/search?building_id={{ building.id }}">Search (this building)</a>
+        </div>
+      </div>
+
+      <div class="card" style="min-width: 320px;">
+        <div style="display:flex; justify-content: space-between; align-items: center; gap: 10px;">
+          <div><strong>Update status</strong></div>
+          <span class="pill small">quick triage</span>
+        </div>
+        <div class="hr"></div>
+        <form method="post" action="/review/buildings/{{ building.id }}/status" class="row">
           <select name="status">
             <option value="new" {% if building.status == "new" %}selected{% endif %}>new</option>
             <option value="reviewed" {% if building.status == "reviewed" %}selected{% endif %}>reviewed</option>
             <option value="shortlisted" {% if building.status == "shortlisted" %}selected{% endif %}>shortlisted</option>
           </select>
-          <button type="submit">Update</button>
+          <button class="btn" type="submit">Update</button>
         </form>
+        <div class="muted small" style="margin-top: 8px;">
+          Tip: use <code>shortlisted</code> only when evidence supports high load + electrical infra.
+        </div>
       </div>
     </div>
 
-    <div class="card">
-      <div><strong>Battery Readiness</strong></div>
-      <div style="font-size: 28px; font-weight: 700;">{{ score.score }}/100</div>
-      <div class="muted">Confidence: {{ score.confidence }}</div>
-      <ul>
-        {% for d in score.drivers %}
-          <li>{{ d }}</li>
-        {% endfor %}
-      </ul>
-    </div>
-
-    <p class="muted">{{ building.address or "" }}</p>
-
-    <p>
-      <a href="/capture">← New capture</a>
-      <span class="muted"> | </span>
-      <a href="/review/parks/{{ building.industrial_park_id }}">← Back to site</a>
-      <span class="muted"> | </span>
-      <a href="/review">← Review</a>
-      <span class="muted"> | </span>
-      <a href="/docs" target="_blank">API docs</a>
-    </p>
-
-    <h2>Artifacts</h2>
-
-    {% if artifacts|length == 0 %}
-      <p class="muted">No artifacts yet. Add a note or upload evidence via <a href="/capture">Capture</a>.</p>
-    {% endif %}
-
-    {% for a in artifacts %}
+    <div class="grid" style="margin-top: 14px;">
       <div class="card">
-        <div>
-          <strong>#{{ a.id }}</strong>
-          <span class="pill">{{ a.kind }}</span>
-          <span class="muted"> — {{ a.created_at }}</span>
+        <div class="scoreBox">
+          <div>
+            <div class="muted small">Battery readiness</div>
+            <div class="scoreNum">{{ score.score }}/100</div>
+          </div>
+          <div class="scoreMeta">
+            <div class="muted small">Confidence</div>
+            <div style="font-weight: 800;">{{ score.confidence }}</div>
+          </div>
         </div>
 
-        {% if a.kind == "text" and a.text_content %}
-          <p style="white-space: pre-wrap;">{{ a.text_content }}</p>
-          {% elif a.storage_path %}
-          {% if a.kind in ["image", "photo"] %}
-            <a href="{{ a.storage_path }}" target="_blank">
-              <img src="{{ a.storage_path }}" alt="image" />
-            </a>
-            <div class="muted"><a href="{{ a.storage_path }}" target="_blank">open</a></div>
-          {% elif a.kind == "audio" %}
-            <audio controls src="{{ a.storage_path }}" style="width:100%; margin-top: 10px;"></audio>
-            <div class="muted"><a href="{{ a.storage_path }}" target="_blank">download/open</a></div>
-          {% else %}
-            <div><strong>{{ a.original_filename or "file" }}</strong></div>
-            <div class="muted"><a href="{{ a.storage_path }}" target="_blank">open</a></div>
-          {% endif %}
+        {% if score.drivers and score.drivers|length > 0 %}
+          <div class="muted" style="margin-top: 10px;"><strong>Top drivers</strong></div>
+          <ul class="drivers">
+            {% for d in score.drivers %}
+              <li>{{ d }}</li>
+            {% endfor %}
+          </ul>
         {% else %}
-          <p class="muted">(empty artifact)</p>
+          <div class="muted" style="margin-top: 10px;">
+            No drivers yet — upload a PDF/manual, photo of electrical gear, or add a note.
+          </div>
         {% endif %}
       </div>
-    {% endfor %}
+
+      <div class="card">
+        <div style="display:flex; justify-content: space-between; align-items: baseline;">
+          <strong>Quick exports</strong>
+          <span class="pill small">csv</span>
+        </div>
+        <div class="hr"></div>
+        <div class="stack">
+          <a class="btn" href="/export/csv?park_id={{ building.industrial_park_id }}">Export site building CSV</a>
+          <a class="btn" href="/export/artifacts.csv?building_id={{ building.id }}">Export building artifacts</a>
+          <a class="btn" href="/export/claims.csv?building_id={{ building.id }}">Export building claims</a>
+        </div>
+        <div class="muted small" style="margin-top: 10px;">
+          These exports are great for spreadsheet review + mapping.
+        </div>
+      </div>
+    </div>
+
+    <div class="card" style="margin-top: 14px;">
+      <div class="toolbar">
+        <div class="toolbarLeft">
+          <strong>Evidence</strong>
+          <span class="pill">{{ artifacts|length }} total</span>
+        </div>
+        <div class="row">
+          <a class="btn" href="/ui/artifacts?building_id={{ building.id }}">Open full gallery</a>
+        </div>
+      </div>
+
+      <div class="hr"></div>
+
+      {% if artifacts|length == 0 %}
+        <div class="muted">No artifacts yet. Add a note or upload evidence via <a href="/capture">Capture</a>.</div>
+      {% else %}
+
+        <!-- Highlight: show up to 6 newest artifacts as cards -->
+        <div class="muted small" style="margin-bottom: 10px;">Newest artifacts (quick triage)</div>
+        <div class="artifactGrid">
+          {% for a in artifacts[:6] %}
+            <div class="card" style="padding: 12px;">
+              <div class="artRow">
+                <div class="artMeta">
+                  <span class="pill">#{{ a.id }}</span>
+                  <span class="pill">{{ a.kind }}</span>
+                  {% if claim_counts_by_artifact is defined and claim_counts_by_artifact.get(a.id) %}
+                    <span class="pill">{{ claim_counts_by_artifact.get(a.id) }} claims</span>
+                  {% endif %}
+                </div>
+                <div class="muted small">{{ a.created_at }}</div>
+              </div>
+
+              <div style="margin-top: 10px;">
+                {% if a.kind in ["image", "photo"] and a.storage_path %}
+                  <a href="/ui/artifacts/{{ a.id }}">
+                    <div class="thumb"><img src="{{ a.storage_path }}" /></div>
+                  </a>
+                {% elif a.kind == "audio" and a.storage_path %}
+                  <div class="thumb"><div class="muted">audio</div></div>
+                {% else %}
+                  <div class="thumb">
+                    <div class="muted small" style="text-align:center; padding: 0 10px;">
+                      {{ a.original_filename or "(text artifact)" }}<br/>
+                      <span class="muted">{{ a.mime_type or "" }}</span>
+                    </div>
+                  </div>
+                {% endif %}
+              </div>
+
+              <div class="row" style="margin-top: 10px;">
+                <a class="btn" href="/ui/artifacts/{{ a.id }}">Details</a>
+                {% if a.storage_path %}
+                  <a class="btn" href="{{ a.storage_path }}" target="_blank">Open file</a>
+                {% endif %}
+              </div>
+            </div>
+          {% endfor %}
+        </div>
+
+        <div class="hr"></div>
+
+        <!-- Full list as collapsible -->
+        <details>
+          <summary>Show all artifacts ({{ artifacts|length }})</summary>
+          <div style="margin-top: 10px;">
+            {% for a in artifacts %}
+              <div style="padding: 10px 0; border-top: 1px solid var(--border);">
+                <div class="artRow">
+                  <div class="artMeta">
+                    <span class="pill">#{{ a.id }}</span>
+                    <span class="pill">{{ a.kind }}</span>
+                    {% if a.original_filename %}<span class="muted">{{ a.original_filename }}</span>{% endif %}
+                  </div>
+                  <div class="row">
+                    <a href="/ui/artifacts/{{ a.id }}">Details</a>
+                    {% if a.storage_path %}<a href="{{ a.storage_path }}" target="_blank">Open</a>{% endif %}
+                  </div>
+                </div>
+
+                {% if a.kind == "text" and a.text_content %}
+                  <div class="muted small" style="white-space: pre-wrap; margin-top: 8px;">
+                    {{ a.text_content[:350] }}{% if a.text_content|length > 350 %}…{% endif %}
+                  </div>
+                {% endif %}
+              </div>
+            {% endfor %}
+          </div>
+        </details>
+
+      {% endif %}
+    </div>
+
+    <!-- Optional: quick “recent extracted text” preview if you later pass it from route -->
+    {% if recent_text_snippets is defined and recent_text_snippets|length > 0 %}
+      <div class="card" style="margin-top: 14px;">
+        <div style="display:flex; justify-content: space-between; align-items: baseline;">
+          <strong>Recent extracted text</strong>
+          <span class="pill small">triage</span>
+        </div>
+        <div class="hr"></div>
+        {% for s in recent_text_snippets %}
+          <div style="border-top: 1px solid var(--border); padding-top: 10px; margin-top: 10px;">
+            <div class="muted small">
+              artifact #{{ s.artifact_id }} · {{ s.source_ref or "" }}
+            </div>
+            <div style="white-space: pre-wrap; margin-top: 6px;">
+              {{ s.text[:450] }}{% if s.text|length > 450 %}…{% endif %}
+            </div>
+          </div>
+        {% endfor %}
+      </div>
+    {% endif %}
   </body>
 </html>
+
+<!-- <!doctype html> -->
+<!-- <html> -->
+<!--   <head> -->
+<!--     <meta charset="utf-8" /> -->
+<!--     <title>Powertown MVP — Building Dossier</title> -->
+<!--     <meta name="viewport" content="width=device-width, initial-scale=1" /> -->
+<!--     <style> -->
+<!--       body { font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; margin: 20px; max-width: 980px; } -->
+<!--       .muted { color: #666; } -->
+<!--       .card { border: 1px solid #ddd; border-radius: 12px; padding: 14px; margin-top: 14px; } -->
+<!--       img { max-width: 100%; border-radius: 10px; border: 1px solid #eee; } -->
+<!--       .media-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 10px; margin-top: 10px; } -->
+<!--       a { text-decoration: none; } -->
+<!--       code { background: #f6f6f6; padding: 2px 6px; border-radius: 6px; } -->
+<!--       .pill { display:inline-block; padding: 2px 8px; border: 1px solid #ddd; border-radius: 999px; font-size: 12px; margin-left: 8px; } -->
+<!--     </style> -->
+<!--   </head> -->
+<!--   <body> -->
+<!--     <h1>{{ building.name }}</h1> -->
+
+<!--     <div class="card"> -->
+<!--       <div style="display:flex; justify-content: space-between; align-items: center; gap: 12px;"> -->
+<!--         <div> -->
+<!--           <strong>Status:</strong> -->
+<!--           <span class="muted">{{ building.status }}</span> -->
+<!--         </div> -->
+
+<!--         <form method="post" action="/review/buildings/{{ building.id }}/status" style="display:flex; gap: 8px;"> -->
+<!--           <select name="status"> -->
+<!--             <option value="new" {% if building.status == "new" %}selected{% endif %}>new</option> -->
+<!--             <option value="reviewed" {% if building.status == "reviewed" %}selected{% endif %}>reviewed</option> -->
+<!--             <option value="shortlisted" {% if building.status == "shortlisted" %}selected{% endif %}>shortlisted</option> -->
+<!--           </select> -->
+<!--           <button type="submit">Update</button> -->
+<!--         </form> -->
+<!--       </div> -->
+<!--     </div> -->
+
+<!--     <div class="card"> -->
+<!--       <div><strong>Battery Readiness</strong></div> -->
+<!--       <div style="font-size: 28px; font-weight: 700;">{{ score.score }}/100</div> -->
+<!--       <div class="muted">Confidence: {{ score.confidence }}</div> -->
+<!--       <ul> -->
+<!--         {% for d in score.drivers %} -->
+<!--           <li>{{ d }}</li> -->
+<!--         {% endfor %} -->
+<!--       </ul> -->
+<!--     </div> -->
+
+<!--     <p class="muted">{{ building.address or "" }}</p> -->
+
+<!--     <p> -->
+<!--       <a href="/capture">← New capture</a> -->
+<!--       <span class="muted"> | </span> -->
+<!--       <a href="/review/parks/{{ building.industrial_park_id }}">← Back to site</a> -->
+<!--       <span class="muted"> | </span> -->
+<!--       <a href="/review">← Review</a> -->
+<!--       <span class="muted"> | </span> -->
+<!--       <a href="/docs" target="_blank">API docs</a> -->
+<!--     </p> -->
+
+<!--     <h2>Artifacts</h2> -->
+
+<!--     {% if artifacts|length == 0 %} -->
+<!--       <p class="muted">No artifacts yet. Add a note or upload evidence via <a href="/capture">Capture</a>.</p> -->
+<!--     {% endif %} -->
+
+<!--     {% for a in artifacts %} -->
+<!--       <div class="card"> -->
+<!--         <div> -->
+<!--           <strong>#{{ a.id }}</strong> -->
+<!--           <span class="pill">{{ a.kind }}</span> -->
+<!--           <span class="muted"> — {{ a.created_at }}</span> -->
+<!--         </div> -->
+
+<!--         {% if a.kind == "text" and a.text_content %} -->
+<!--           <p style="white-space: pre-wrap;">{{ a.text_content }}</p> -->
+<!--           {% elif a.storage_path %} -->
+<!--           {% if a.kind in ["image", "photo"] %} -->
+<!--             <a href="{{ a.storage_path }}" target="_blank"> -->
+<!--               <img src="{{ a.storage_path }}" alt="image" /> -->
+<!--             </a> -->
+<!--             <div class="muted"><a href="{{ a.storage_path }}" target="_blank">open</a></div> -->
+<!--           {% elif a.kind == "audio" %} -->
+<!--             <audio controls src="{{ a.storage_path }}" style="width:100%; margin-top: 10px;"></audio> -->
+<!--             <div class="muted"><a href="{{ a.storage_path }}" target="_blank">download/open</a></div> -->
+<!--           {% else %} -->
+<!--             <div><strong>{{ a.original_filename or "file" }}</strong></div> -->
+<!--             <div class="muted"><a href="{{ a.storage_path }}" target="_blank">open</a></div> -->
+<!--           {% endif %} -->
+<!--         {% else %} -->
+<!--           <p class="muted">(empty artifact)</p> -->
+<!--         {% endif %} -->
+<!--       </div> -->
+<!--     {% endfor %} -->
+<!--   </body> -->
+<!-- </html> -->

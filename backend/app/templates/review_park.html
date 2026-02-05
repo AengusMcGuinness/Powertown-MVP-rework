@@ -2,96 +2,207 @@
 <html>
   <head>
     <meta charset="utf-8" />
-    <title>Powertown MVP — Review Site</title>
+    <title>Powertown MVP — {{ park.name }}</title>
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <style>
-      body { font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; margin: 20px; max-width: 900px; }
-      a { text-decoration: none; }
-      .card { border: 1px solid #ddd; border-radius: 10px; padding: 14px; margin-top: 12px; }
+      body { font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; margin: 20px; max-width: 1100px; }
+      a { text-decoration: none; color: #0b5fff; }
+      a:hover { text-decoration: underline; }
+      .card { border: 1px solid #ddd; border-radius: 12px; padding: 14px; margin-top: 14px; }
       .muted { color: #666; }
-      .pill { display:inline-block; padding: 2px 8px; border: 1px solid #ddd; border-radius: 999px; font-size: 12px; margin-left: 8px; }
+      .pill { display:inline-block; padding: 2px 8px; border: 1px solid #ddd; border-radius: 999px; font-size: 12px; margin-left: 8px; background: #fafafa; }
+      .row { display:flex; justify-content: space-between; align-items: baseline; gap: 12px; flex-wrap: wrap; }
+      .grid2 { display:grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+      @media (max-width: 900px) { .grid2 { grid-template-columns: 1fr; } }
+      input { padding: 10px; width: 100%; }
+      button { padding: 10px 14px; font-weight: 600; }
+      .small { font-size: 13px; }
+      .sep { border-top: 1px solid #eee; margin-top: 12px; padding-top: 12px; }
+      .score { font-size: 18px; font-weight: 800; }
+      .controls { display:flex; gap: 10px; align-items:center; flex-wrap: wrap; }
+      .btnlink { display:inline-block; padding: 6px 10px; border: 1px solid #ddd; border-radius: 8px; color: #333; background: #fff; }
+      .btnlink:hover { background:#f3f4f6; text-decoration:none; }
+      .btnlink.primary { border-color:#0b5fff; color:#0b5fff; }
     </style>
   </head>
+
   <body>
-    <h1>{{ park.name }}</h1>
-    <p class="muted">{{ park.location or "" }}</p>
+    {% set page_title = park.name %}
+    {% set active_nav = "review" %}
+    {% include "_nav.html" %}
 
-    <p>
-      <a href="/review">← Back to all sites</a>
-      <span class="muted"> | </span>
-      <a href="/capture">+ New capture</a>
-      <span class="muted"> | </span>
-      <a href="/export/csv?park_id={{ park.id }}">Export CSV</a>
-    </p>
+    <div class="muted">{{ park.location or "" }}</div>
 
+    <!-- Quick actions + search -->
     <div class="card">
-      <div><strong>Top candidates</strong></div>
+      <div class="row">
+        <div>
+          <strong>Park actions</strong>
+          <div class="muted small">Jump to evidence, search, and exports for this site.</div>
+        </div>
+        <div class="controls">
+          <a class="btnlink" href="/export/csv?park_id={{ park.id }}">Export building CSV</a>
+          <a class="btnlink" href="/export/artifacts.csv?park_id={{ park.id }}">Export artifacts</a>
+          <a class="btnlink" href="/export/claims.csv?park_id={{ park.id }}">Export claims</a>
+        </div>
+      </div>
+
+      <form method="get" action="/review/parks/{{ park.id }}" class="sep">
+        <div class="row" style="align-items: center;">
+          <div style="flex: 2; min-width: 260px;">
+            <label class="small"><strong>Search within this park</strong></label>
+            <input name="q" value="{{ q or '' }}" placeholder="Try: transformer, 12.47, interconnection, PJM..." />
+            <div class="muted small" style="margin-top:6px;">
+              Tip: use this to filter the on-page lists, or jump to the full Artifact Gallery / Search.
+            </div>
+          </div>
+
+          <div style="flex: 1; min-width: 220px;">
+            <label class="small"><strong>Show all</strong></label>
+            <div class="controls" style="margin-top:6px;">
+              <label class="small">
+                <input type="checkbox" name="all_buildings" value="1" {% if all_buildings %}checked{% endif %}/>
+                buildings
+              </label>
+              <label class="small">
+                <input type="checkbox" name="all_artifacts" value="1" {% if all_artifacts %}checked{% endif %}/>
+                artifacts
+              </label>
+            </div>
+            <div class="controls" style="margin-top:10px;">
+              <button type="submit">Apply</button>
+              <a class="muted small" href="/review/parks/{{ park.id }}">Reset</a>
+            </div>
+          </div>
+
+          <div style="flex: 1; min-width: 220px;">
+            <label class="small"><strong>Jump to full search</strong></label>
+            <div class="controls" style="margin-top:6px;">
+              <a class="btnlink primary" href="/ui/artifacts?park_id={{ park.id }}&q={{ (q or '')|urlencode }}">Artifact Gallery</a>
+              <a class="btnlink primary" href="/ui/search?q={{ (q or '')|urlencode }}&park_id={{ park.id }}">Search</a>
+            </div>
+            <div class="muted small" style="margin-top:6px;">
+              Gallery/Search show more fields (file names, extracted text, claim values).
+            </div>
+          </div>
+        </div>
+      </form>
+    </div>
+
+    <!-- Top candidates -->
+    <div class="card">
+      <div class="row">
+        <div><strong>Top candidates</strong></div>
+        <div class="muted small">Highest-scoring buildings in this park.</div>
+      </div>
+
       {% if top_candidates|length == 0 %}
         <p class="muted">No buildings yet.</p>
       {% endif %}
 
       {% for c in top_candidates %}
-        <div style="display:flex; justify-content: space-between; gap: 10px; margin-top: 10px;">
-          <div>
-            <strong><a href="/review/buildings/{{ c.building.id }}">{{ c.building.name }}</a></strong>
-            <div class="muted">{{ c.building.address or "" }}</div>
-            {% if c.score.drivers and c.score.drivers|length > 0 %}
-              <div class="muted">{{ c.score.drivers[0] }}{% if c.score.drivers|length > 1 %}, {{ c.score.drivers[1] }}{% endif %}</div>
-            {% endif %}
-          </div>
-          <div style="text-align:right;">
-            <div style="font-size: 18px; font-weight: 700;">{{ c.score.score }}/100</div>
-            <div class="muted">{{ c.score.confidence }}</div>
-          </div>
-        </div>
-      {% endfor %}
-    </div>
-
-    <div class="card">
-      <div style="display:flex; justify-content: space-between; align-items: baseline;">
-        <div><strong>Buildings</strong></div>
-        <div class="muted">{{ building_cards|length }} total</div>
-      </div>
-
-      {% if building_cards|length == 0 %}
-        <p class="muted">No buildings yet.</p>
-      {% endif %}
-
-      {% for c in building_cards %}
-        <div style="margin-top: 12px; padding-top: 12px; border-top: 1px solid #eee;">
-          <div style="display:flex; justify-content: space-between; gap: 10px;">
+        <div class="sep">
+          <div class="row">
             <div>
               <strong><a href="/review/buildings/{{ c.building.id }}">{{ c.building.name }}</a></strong>
               <div class="muted">{{ c.building.address or "" }}</div>
+              {% if c.score.drivers and c.score.drivers|length > 0 %}
+                <div class="muted small">
+                  {{ c.score.drivers[0] }}{% if c.score.drivers|length > 1 %}, {{ c.score.drivers[1] }}{% endif %}
+                </div>
+              {% endif %}
             </div>
             <div style="text-align:right;">
-              <div style="font-size: 18px; font-weight: 700;">{{ c.score.score }}/100</div>
-              <div class="muted">{{ c.score.confidence }}</div>
-              <div class="muted"><span class="pill">{{ c.artifact_count }} artifacts</span></div>
+              <div class="score">{{ c.score.score }}/100</div>
+              <div class="muted small">{{ c.score.confidence }}</div>
             </div>
           </div>
         </div>
       {% endfor %}
     </div>
 
-    <div class="card">
-      <div><strong>Recent artifacts</strong></div>
-      {% if recent_artifacts|length == 0 %}
-        <p class="muted">No artifacts yet.</p>
-      {% endif %}
-      {% for a in recent_artifacts %}
-        <div style="margin-top: 12px; padding-top: 12px; border-top: 1px solid #eee;">
-          <div class="muted">{{ a.created_at }} — <span class="pill">{{ a.kind }}</span></div>
-          {% if a.building_id and building_by_id.get(a.building_id) %}
-            <div><a href="/review/buildings/{{ a.building_id }}"><strong>{{ building_by_id[a.building_id].name }}</strong></a></div>
-          {% endif %}
-          {% if a.kind == "text" and a.text_content %}
-            <div style="margin-top: 6px; white-space: pre-wrap;">{{ a.text_content[:240] }}{% if a.text_content|length > 240 %}…{% endif %}</div>
-          {% elif a.original_filename %}
-            <div style="margin-top: 6px;" class="muted">{{ a.original_filename }}</div>
-          {% endif %}
+    <!-- Buildings + Recent artifacts side-by-side -->
+    <div class="grid2">
+      <!-- Buildings -->
+      <div class="card">
+        <div class="row">
+          <div><strong>Buildings</strong></div>
+          <div class="muted small">
+            Showing {{ buildings_shown }} of {{ buildings_total }}
+            {% if not all_buildings and buildings_total > buildings_shown %}
+              · <a href="/review/parks/{{ park.id }}?q={{ (q or '')|urlencode }}&all_buildings=1{% if all_artifacts %}&all_artifacts=1{% endif %}">show all</a>
+            {% endif %}
+          </div>
         </div>
-      {% endfor %}
+
+        {% if building_cards|length == 0 %}
+          <p class="muted">No buildings yet.</p>
+        {% endif %}
+
+        {% for c in building_cards %}
+          <div class="sep">
+            <div class="row">
+              <div>
+                <strong><a href="/review/buildings/{{ c.building.id }}">{{ c.building.name }}</a></strong>
+                <div class="muted small">{{ c.building.address or "" }}</div>
+                <div class="muted small">
+                  <span class="pill">{{ c.artifact_count }} artifacts</span>
+                </div>
+              </div>
+              <div style="text-align:right;">
+                <div class="score">{{ c.score.score }}/100</div>
+                <div class="muted small">{{ c.score.confidence }}</div>
+              </div>
+            </div>
+          </div>
+        {% endfor %}
+      </div>
+
+      <!-- Recent artifacts -->
+      <div class="card">
+        <div class="row">
+          <div><strong>Recent artifacts</strong></div>
+          <div class="muted small">
+            Showing {{ artifacts_shown }} of {{ artifacts_total }}
+            {% if not all_artifacts and artifacts_total > artifacts_shown %}
+              · <a href="/review/parks/{{ park.id }}?q={{ (q or '')|urlencode }}&all_artifacts=1{% if all_buildings %}&all_buildings=1{% endif %}">show all</a>
+            {% endif %}
+          </div>
+        </div>
+
+        {% if recent_artifacts|length == 0 %}
+          <p class="muted">No artifacts yet.</p>
+        {% endif %}
+
+        {% for a in recent_artifacts %}
+          <div class="sep">
+            <div class="muted small">
+              {{ a.created_at }} — <span class="pill">{{ a.kind }}</span>
+              <span class="pill">#{{ a.id }}</span>
+            </div>
+
+            {% if a.building_id and building_by_id.get(a.building_id) %}
+              <div>
+                <a href="/review/buildings/{{ a.building_id }}">
+                  <strong>{{ building_by_id[a.building_id].name }}</strong>
+                </a>
+              </div>
+            {% endif %}
+
+            {% if a.original_filename %}
+              <div class="muted small" style="margin-top: 6px;">{{ a.original_filename }}</div>
+            {% endif %}
+
+            <div class="small" style="margin-top: 8px;">
+              <a href="/ui/artifacts/{{ a.id }}">Details</a>
+              {% if a.storage_path %}
+                <span class="muted"> · </span>
+                <a href="{{ a.storage_path }}" target="_blank">Open file</a>
+              {% endif %}
+            </div>
+          </div>
+        {% endfor %}
+      </div>
     </div>
   </body>
 </html>

@@ -56,6 +56,17 @@ async def upload_artifact(
     if not file.filename:
         raise HTTPException(status_code=400, detail="missing filename")
 
+    mt = (file.content_type or "").lower()
+    kind_norm = kind.strip().lower() or "file"
+
+    if kind_norm == "file":
+        if mt.startswith("audio/"):
+            kind_norm = "audio"
+        elif mt.startswith("video/"):
+            kind_norm = "video"
+        elif mt == "application/pdf":
+            kind_norm = "pdf"
+
     # Validate foreign keys if provided
     if industrial_park_id is not None and not db.get(models.IndustrialPark, industrial_park_id):
         raise HTTPException(status_code=404, detail="industrial_park not found")

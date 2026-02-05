@@ -5,11 +5,12 @@ from collections import defaultdict
 from datetime import datetime
 from typing import Optional
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile, Query
 from fastapi.responses import RedirectResponse
 from fastapi.templating import Jinja2Templates
 from sqlalchemy.orm import Session
 from sqlalchemy import or_
+from sqlalchemy import func
 
 from backend.app import models
 from backend.app.db import get_db
@@ -75,39 +76,151 @@ def review_home(request: Request, db: Session = Depends(get_db)):
 
     return templates.TemplateResponse("review_home.html", {"request": request, "park_cards": park_cards})
 
-
 @router.get("/review/parks/{park_id}")
-def review_park(park_id: int, request: Request, status: Optional[str] = None, db: Session = Depends(get_db)):
+def review_park(
+    park_id: int,
+    request: Request,
+    status: Optional[str] = None,
+    q: Optional[str] = Query(default=None),
+    all_buildings: int = Query(default=0),
+    all_artifacts: int = Query(default=0),
+    db: Session = Depends(get_db),
+):
     park = db.get(models.IndustrialPark, park_id)
     if not park:
         raise HTTPException(status_code=404, detail="site not found")
 
+    # --- Limits (default top 10) ---
+    BUILDINGS_LIMIT = 10
+    ARTIFACTS_LIMIT = 10
+    show_all_buildings = bool(all_buildings)
+    show_all_artifacts = bool(all_artifacts)
+
+    q_norm = (q or "").strip()
+    q_like = f"%{q_norm}%" if q_norm else None
+
+    # --- Buildings query ---
     bq = db.query(models.Building).filter(models.Building.industrial_park_id == park_id)
     if status:
         bq = bq.filter(models.Building.status == status)
-    buildings = bq.order_by(models.Building.id.desc()).all()
 
+    if q_norm:
+        # lightweight filtering: name/address
+        bq = bq.filter(
+            or_(
+                models.Building.name.ilike(q_like),
+                models.Building.address.ilike(q_like),
+            )
+        )
+
+    buildings_total = bq.count()
+
+    # Choose which buildings to display
+    if show_all_buildings:
+        buildings = bq.order_by(models.Building.id.desc()).all()
+    else:
+        buildings = bq.order_by(models.Building.id.desc()).limit(BUILDINGS_LIMIT).all()
+
+    buildings_shown = len(buildings)
+
+    # Build cards (score + artifact counts)
     building_cards = []
+    building_ids = [b.id for b in buildings]
+
+    # Count artifacts per building efficiently (only for displayed buildings)
+    artifact_counts = {}
+    if building_ids:
+        rows = (
+            db.query(models.Artifact.building_id, func.count(models.Artifact.id))
+            .filter(models.Artifact.building_id.in_(building_ids))
+            .group_by(models.Artifact.building_id)
+            .all()
+        )
+        artifact_counts = {bid: cnt for bid, cnt in rows}
+
     for b in buildings:
         score = get_or_compute_building_score(db, b.id)
-        artifact_count = db.query(models.Artifact).filter(models.Artifact.building_id == b.id).count()
-        building_cards.append({"building": b, "score": score, "artifact_count": artifact_count})
+        building_cards.append(
+            {
+                "building": b,
+                "score": score,
+                "artifact_count": int(artifact_counts.get(b.id, 0)),
+            }
+        )
 
-    top_candidates = sorted(building_cards, key=lambda c: c["score"].score, reverse=True)[:5]
+    # Top candidates: compute from ALL matching buildings (not just displayed) so it's meaningful
+    # If you want "top candidates among displayed only", change this to building_cards.
+    top_candidates = []
+    if buildings_total > 0:
+        # Pull candidate set to score:
+        # - if show_all_buildings or q is set, we've already got the set (buildings)
+        # - otherwise we should score the full park to find top candidates
+        if show_all_buildings or q_norm:
+            candidate_buildings = buildings
+        else:
+            candidate_buildings = (
+                db.query(models.Building)
+                .filter(models.Building.industrial_park_id == park_id)
+                .order_by(models.Building.id.desc())
+                .all()
+            )
 
-    building_by_id = {b.id: b for b in buildings}
-    ids = list(building_by_id.keys())
-    aq = db.query(models.Artifact).filter(
-        (models.Artifact.industrial_park_id == park_id)
-        | (models.Artifact.building_id.in_(ids) if ids else False)
+        candidate_cards = []
+        # artifact counts for candidates (optional; not needed for top scoring)
+        for b in candidate_buildings:
+            score = get_or_compute_building_score(db, b.id)
+            candidate_cards.append({"building": b, "score": score, "artifact_count": 0})
+
+        top_candidates = sorted(candidate_cards, key=lambda c: c["score"].score, reverse=True)[:5]
+
+    # building lookup for artifacts list display
+    # Use *all* buildings in the park for name lookup so artifacts link correctly.
+    all_bldgs = (
+        db.query(models.Building)
+        .filter(models.Building.industrial_park_id == park_id)
+        .all()
     )
-    recent_artifacts = aq.order_by(models.Artifact.created_at.desc()).limit(15).all()
+    building_by_id = {b.id: b for b in all_bldgs}
+    all_ids = list(building_by_id.keys())
+
+    # --- Artifacts query (park or buildings in park) ---
+    aq = db.query(models.Artifact).filter(
+        or_(
+            models.Artifact.industrial_park_id == park_id,
+            models.Artifact.building_id.in_(all_ids) if all_ids else False,
+        )
+    )
+
+    if q_norm:
+        # lightweight artifact filtering: filename; (optionally) text_content
+        aq = aq.filter(
+            or_(
+                models.Artifact.original_filename.ilike(q_like),
+                models.Artifact.text_content.ilike(q_like),
+            )
+        )
+
+    artifacts_total = aq.count()
+
+    if show_all_artifacts:
+        recent_artifacts = aq.order_by(models.Artifact.created_at.desc()).all()
+    else:
+        recent_artifacts = aq.order_by(models.Artifact.created_at.desc()).limit(ARTIFACTS_LIMIT).all()
+
+    artifacts_shown = len(recent_artifacts)
 
     return templates.TemplateResponse(
         "review_park.html",
         {
             "request": request,
             "park": park,
+            "q": q_norm or None,
+            "all_buildings": show_all_buildings,
+            "all_artifacts": show_all_artifacts,
+            "buildings_total": int(buildings_total),
+            "buildings_shown": int(buildings_shown),
+            "artifacts_total": int(artifacts_total),
+            "artifacts_shown": int(artifacts_shown),
             "building_cards": building_cards,
             "top_candidates": top_candidates,
             "recent_artifacts": recent_artifacts,
@@ -115,26 +228,87 @@ def review_park(park_id: int, request: Request, status: Optional[str] = None, db
         },
     )
 
-
 @router.get("/review/buildings/{building_id}")
 def review_building(building_id: int, request: Request, db: Session = Depends(get_db)):
     building = db.get(models.Building, building_id)
     if not building:
         raise HTTPException(status_code=404, detail="building not found")
 
+    # Artifacts (newest first)
     artifacts = (
         db.query(models.Artifact)
         .filter(models.Artifact.building_id == building_id)
-        .order_by(models.Artifact.created_at.desc())
+        .order_by(models.Artifact.created_at.desc(), models.Artifact.id.desc())
         .all()
     )
+    artifact_ids = [a.id for a in artifacts]
+
+    # Score (your existing cache + compute path)
     score = get_or_compute_building_score(db, building_id)
+
+    # ---- Claims: per-artifact counts + total ----
+    claim_counts_by_artifact: dict[int, int] = {}
+    total_claims = 0
+    if artifact_ids:
+        rows = (
+            db.query(models.Claim.artifact_id, func.count(models.Claim.id))
+            .filter(models.Claim.artifact_id.in_(artifact_ids))
+            .group_by(models.Claim.artifact_id)
+            .all()
+        )
+        claim_counts_by_artifact = {aid: int(cnt) for (aid, cnt) in rows}
+        total_claims = int(sum(claim_counts_by_artifact.values()))
+
+    # ---- Text segments: total across artifacts in this building ----
+    total_segments = 0
+    if artifact_ids:
+        total_segments = (
+            db.query(func.count(models.ArtifactTextSegment.id))
+            .filter(models.ArtifactTextSegment.artifact_id.in_(artifact_ids))
+            .scalar()
+        ) or 0
+        total_segments = int(total_segments)
+
+    # ---- Recent extracted text snippets (for quick triage) ----
+    # Pull last 5 segments across this building’s artifacts
+    recent_text_snippets: list[dict[str, Any]] = []
+    if artifact_ids:
+        seg_rows = (
+            db.query(
+                models.ArtifactTextSegment.artifact_id,
+                models.ArtifactTextSegment.text,
+                models.ArtifactTextSegment.source_ref,
+                models.ArtifactTextSegment.created_at,
+            )
+            .filter(models.ArtifactTextSegment.artifact_id.in_(artifact_ids))
+            .order_by(models.ArtifactTextSegment.created_at.desc(), models.ArtifactTextSegment.id.desc())
+            .limit(5)
+            .all()
+        )
+        recent_text_snippets = [
+            {
+                "artifact_id": r.artifact_id,
+                "text": r.text or "",
+                "source_ref": r.source_ref,
+                "created_at": r.created_at,
+            }
+            for r in seg_rows
+        ]
 
     return templates.TemplateResponse(
         "review_building.html",
-        {"request": request, "building": building, "artifacts": artifacts, "score": score},
+        {
+            "request": request,
+            "building": building,
+            "artifacts": artifacts,
+            "score": score,
+            # new template extras
+            "claim_counts_by_artifact": claim_counts_by_artifact,
+            "claim_counts": {"total": total_claims},
+            "segment_counts": {"total": total_segments},
+            "recent_text_snippets": recent_text_snippets,
+        },
     )
-
 
 @router.post("/review/buildings/{building_id}/status")
 def set_building_status(building_id: int, status: str = Form(...), db: Session = Depends(get_db)):

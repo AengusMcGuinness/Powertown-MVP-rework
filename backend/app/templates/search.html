@@ -22,13 +22,9 @@
     </style>
   </head>
   <body>
-    <p>
-      <a href="/review">← Review</a>
-      <span class="muted"> | </span>
-      <a href="/ui/artifacts">Gallery</a>
-    </p>
-
-    <h1>Search</h1>
+        {% set page_title = "Search" %}
+	{% set active_nav = "search" %}
+	{% include "_nav.html" %}
     <div class="muted">Search across artifact filenames/metadata, extracted text, and extracted claims.</div>
 
     <form method="get" action="/ui/search" class="card">

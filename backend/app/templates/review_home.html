@@ -4,38 +4,137 @@
     <meta charset="utf-8" />
     <title>Powertown MVP — Review</title>
     <meta name="viewport" content="width=device-width, initial-scale=1" />
+
     <style>
-      body { font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; margin: 20px; max-width: 950px; }
-      .topbar { display:flex; justify-content: space-between; align-items: baseline; }
-      a { text-decoration: none; }
-      .card { border: 1px solid #ddd; border-radius: 12px; padding: 14px; margin-top: 12px; }
+      body {
+        font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+        margin: 20px;
+        max-width: 1100px;
+      }
+
+      a { text-decoration: none; color: #0b5fff; }
+      a:hover { text-decoration: underline; }
+
+      /* ---------- Top navigation ---------- */
+      .nav {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        gap: 16px;
+        margin-bottom: 24px;
+        padding-bottom: 12px;
+        border-bottom: 1px solid #eee;
+      }
+
+      .nav-left {
+        display: flex;
+        align-items: baseline;
+        gap: 18px;
+      }
+
+      .nav-left h1 {
+        margin: 0;
+        font-size: 26px;
+      }
+
+      .nav-links {
+        display: flex;
+        gap: 14px;
+        font-size: 14px;
+      }
+
+      .nav-links a {
+        padding: 4px 8px;
+        border-radius: 6px;
+        color: #333;
+      }
+
+      .nav-links a:hover {
+        background: #f3f4f6;
+        text-decoration: none;
+      }
+
+      .nav-right {
+        display: flex;
+        gap: 14px;
+        font-size: 14px;
+      }
+
+      .nav-right a.primary {
+        background: #0b5fff;
+        color: white;
+        padding: 6px 10px;
+        border-radius: 8px;
+        font-weight: 500;
+      }
+
+      .nav-right a.primary:hover {
+        background: #0847c7;
+        text-decoration: none;
+      }
+
+      /* ---------- Content ---------- */
       .muted { color: #666; }
-      .pill { display:inline-block; padding: 2px 8px; border-radius: 999px; border:1px solid #ddd; margin-left: 8px; font-size: 12px; }
+
+      .card {
+        border: 1px solid #ddd;
+        border-radius: 12px;
+        padding: 14px;
+        margin-top: 12px;
+      }
+
+      .pill {
+        display: inline-block;
+        padding: 2px 8px;
+        border-radius: 999px;
+        border: 1px solid #ddd;
+        margin-left: 8px;
+        font-size: 12px;
+        background: #fafafa;
+      }
     </style>
   </head>
+
   <body>
-    <div class="topbar">
-      <h1>Review</h1>
-      <div>
-        <a href="/export/csv">Export CSV</a>
-        <span class="muted"> | </span>
-        <a href="/capture">+ New capture</a>
-        <span class="muted"> | </span>
-        <a href="/docs" target="_blank">API docs</a>
+
+    <!-- Top navigation -->
+    <div class="nav">
+      <div class="nav-left">
+        <h1>Review</h1>
+        <div class="nav-links">
+          <a href="/review">Parks</a>
+          <a href="/ui/artifacts">Artifacts</a>
+          <a href="/ui/search">Search</a>
+          <a href="/export/csv">Export</a>
+        </div>
+      </div>
+
+      <div class="nav-right">
+        <a href="/capture">Capture</a>
+        <a href="/docs" target="_blank">API</a>
+        <a href="/capture" class="primary">+ New capture</a>
       </div>
     </div>
 
-    <p class="muted">Sites (industrial parks), buildings, and evidence artifacts.</p>
+    <p class="muted">
+      Sites (industrial parks), buildings, and evidence artifacts.
+    </p>
 
     {% if park_cards|length == 0 %}
-      <p class="muted">No sites yet. Start with <a href="/capture">Field Capture</a>.</p>
+      <p class="muted">
+        No sites yet. Start with <a href="/capture">Field Capture</a>.
+      </p>
     {% endif %}
 
     {% for c in park_cards %}
       <div class="card">
         <div style="display:flex; justify-content: space-between; gap: 12px; align-items: baseline;">
           <div>
-            <strong><a href="/review/parks/{{ c.park.id }}">{{ c.park.name }}</a></strong>
+            <strong>
+              <a href="/review/parks/{{ c.park.id }}">
+                {{ c.park.name }}
+              </a>
+            </strong>
             {% if c.park.location %}
               <span class="muted"> — {{ c.park.location }}</span>
             {% endif %}
@@ -45,10 +144,14 @@
             <span class="pill">{{ c.artifact_count }} artifacts</span>
           </div>
         </div>
+
         {% if c.last_activity_at %}
-          <div class="muted" style="margin-top: 8px;">Last artifact: {{ c.last_activity_at }}</div>
+          <div class="muted" style="margin-top: 8px;">
+            Last artifact: {{ c.last_activity_at }}
+          </div>
         {% endif %}
       </div>
     {% endfor %}
+
   </body>
 </html>
