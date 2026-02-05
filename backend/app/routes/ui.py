@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from collections import defaultdict
+
 from datetime import datetime
 from typing import Optional
 
@@ -7,6 +9,7 @@ from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, Uplo
 from fastapi.responses import RedirectResponse
 from fastapi.templating import Jinja2Templates
 from sqlalchemy.orm import Session
+from sqlalchemy import or_
 
 from backend.app import models
 from backend.app.db import get_db
@@ -232,26 +235,220 @@ async def capture_submit(
     return RedirectResponse(url=f"/review/buildings/{building.id}", status_code=303)
 
 
+
+def _clean_int(s: str | None) -> Optional[int]:
+    if not s:
+        return None
+    s = s.strip()
+    if not s:
+        return None
+    try:
+        return int(s)
+    except Exception:
+        return None
+
+
+def _make_snippet(text: str, q: str, radius: int = 90) -> str:
+    """
+    Returns a short HTML snippet with <mark>highlight</mark>.
+    Safe enough for MVP: we escape the original text then insert marks
+    by operating on lowercase match positions.
+    """
+    if not text:
+        return ""
+    q = (q or "").strip()
+    if not q:
+        return html.escape(text[: 2 * radius])
+
+    low = text.lower()
+    qlow = q.lower()
+    idx = low.find(qlow)
+    if idx < 0:
+        return html.escape(text[: 2 * radius])
+
+    start = max(0, idx - radius)
+    end = min(len(text), idx + len(q) + radius)
+    chunk = text[start:end]
+
+    # Escape first, then mark by locating in escaped text is hard;
+    # instead we do a simple safe approach: escape chunks and then
+    # replace escaped query occurrences case-insensitively using a scan.
+    escaped = html.escape(chunk)
+
+    # Best-effort marking: find in lowercased chunk (not escaped),
+    # then slice original chunk and escape pieces separately.
+    pre = html.escape(chunk[: idx - start])
+    mid = html.escape(chunk[idx - start : idx - start + len(q)])
+    post = html.escape(chunk[idx - start + len(q) :])
+
+    prefix = "…" if start > 0 else ""
+    suffix = "…" if end < len(text) else ""
+    return f"{prefix}{pre}<mark>{mid}</mark>{post}{suffix}"
+
+
 # --- UI Search (fixed) ---
 @router.get("/ui/search")
 def ui_search(
     request: Request,
     q: str = "",
-    mode: str = "kw",           # accept but currently ignore
-    building_id: str = "",      # accept empty string safely
+    mode: str = "kw",       # kept for future (nl vs kw)
+    building_id: str = "",  # allow empty string
+    park_id: str = "",      # allow empty string
+    limit: int = 60,
     db: Session = Depends(get_db),
 ):
+    q = (q or "").strip()
+    limit = max(10, min(int(limit), 200))
+
     bid = _clean_int(building_id)
-    results = None
-    if (q or "").strip():
-        from backend.app.routes.search import search as api_search
-        results = api_search(q=q.strip(), building_id=bid, limit=50, db=db)
+    pid = _clean_int(park_id)
+
+    results = {
+        "artifact_matches": [],   # artifacts matched by filename/metadata
+        "claim_matches": [],      # individual claim hits
+        "text_groups": [],        # grouped text matches by artifact
+    }
+
+    if not q:
+        return templates.TemplateResponse(
+            "search.html",
+            {
+                "request": request,
+                "q": q,
+                "mode": mode,
+                "building_id": bid,
+                "park_id": pid,
+                "results": results,
+            },
+        )
+
+    like = f"%{q}%"
+
+    # ---- Base artifact scope (optional filters) ----
+    artifact_scope = db.query(models.Artifact)
+    if bid is not None:
+        artifact_scope = artifact_scope.filter(models.Artifact.building_id == bid)
+    if pid is not None:
+        artifact_scope = artifact_scope.filter(models.Artifact.industrial_park_id == pid)
+
+    scoped_ids = [row[0] for row in artifact_scope.with_entities(models.Artifact.id).all()]
+    # If no artifacts match filters, keep empty scope early
+    if (bid is not None or pid is not None) and not scoped_ids:
+        return templates.TemplateResponse(
+            "search.html",
+            {
+                "request": request,
+                "q": q,
+                "mode": mode,
+                "building_id": bid,
+                "park_id": pid,
+                "results": results,
+            },
+        )
+
+    # ---- 1) Artifact metadata matches ----
+    aq = db.query(models.Artifact)
+    if scoped_ids:
+        aq = aq.filter(models.Artifact.id.in_(scoped_ids))
+    aq = aq.filter(
+        or_(
+            models.Artifact.original_filename.ilike(like),
+            models.Artifact.kind.ilike(like),
+            models.Artifact.mime_type.ilike(like),
+            models.Artifact.text_content.ilike(like),
+        )
+    ).order_by(models.Artifact.created_at.desc()).limit(25)
+
+    results["artifact_matches"] = list(aq.all())
+
+    # ---- 2) Claim matches (show top N by confidence) ----
+    cq = db.query(models.Claim)
+    if scoped_ids:
+        cq = cq.filter(models.Claim.artifact_id.in_(scoped_ids))
+    cq = cq.filter(
+        or_(
+            models.Claim.field_key.ilike(like),
+            models.Claim.value_json.ilike(like),
+            models.Claim.unit.ilike(like),
+        )
+    ).order_by(models.Claim.confidence.desc()).limit(40)
+
+    claim_rows = list(cq.all())
+    # Map artifacts for display
+    claim_artifacts = {}
+    if claim_rows:
+        aids = sorted({c.artifact_id for c in claim_rows})
+        for a in db.query(models.Artifact).filter(models.Artifact.id.in_(aids)).all():
+            claim_artifacts[a.id] = a
+
+    results["claim_matches"] = [
+        {"claim": c, "artifact": claim_artifacts.get(c.artifact_id)}
+        for c in claim_rows
+    ]
+
+    # ---- 3) Text segment matches (grouped by artifact, top N snippets each) ----
+    tq = db.query(models.ArtifactTextSegment)
+    if scoped_ids:
+        tq = tq.filter(models.ArtifactTextSegment.artifact_id.in_(scoped_ids))
+    tq = tq.filter(models.ArtifactTextSegment.text.ilike(like)).order_by(
+        models.ArtifactTextSegment.artifact_id.asc(),
+        models.ArtifactTextSegment.segment_index.asc(),
+    ).limit(limit)
+
+    segs = list(tq.all())
+
+    # Load referenced artifacts
+    seg_artifacts = {}
+    if segs:
+        aids = sorted({s.artifact_id for s in segs})
+        for a in db.query(models.Artifact).filter(models.Artifact.id.in_(aids)).all():
+            seg_artifacts[a.id] = a
+
+    grouped: dict[int, list[models.ArtifactTextSegment]] = defaultdict(list)
+    for s in segs:
+        grouped[s.artifact_id].append(s)
+
+    # Build groups with top 3 snippets per artifact
+    text_groups = []
+    for aid, seg_list in grouped.items():
+        a = seg_artifacts.get(aid)
+        if not a:
+            continue
+
+        # Keep first few segments for that artifact (already ordered by seg_index)
+        top = seg_list[:3]
+        matches = []
+        for s in top:
+            matches.append(
+                {
+                    "segment_index": s.segment_index,  # used only for deep-link anchor
+                    "snippet_html": _make_snippet(s.text, q),
+                }
+            )
+
+        text_groups.append(
+            {
+                "artifact": a,
+                "matches": matches,
+                "more_count": max(0, len(seg_list) - len(top)),
+            }
+        )
+
+    # Sort groups by recency of artifact
+    text_groups.sort(key=lambda g: (g["artifact"].created_at or 0), reverse=True)
+    results["text_groups"] = text_groups
 
     return templates.TemplateResponse(
         "search.html",
-        {"request": request, "q": q, "results": results, "mode": mode, "building_id": bid},
+        {
+            "request": request,
+            "q": q,
+            "mode": mode,
+            "building_id": bid,
+            "park_id": pid,
+            "results": results,
+        },
     )
-
 
 # Keep old link alive: /search -> /ui/search
 @router.get("/search")
