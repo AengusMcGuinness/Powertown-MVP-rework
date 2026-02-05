@@ -1,0 +1,96 @@
+{# backend/app/templates/_nav.html #}
+<style>
+  /* ---------- Shared top navigation ---------- */
+  .nav {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 16px;
+    margin-bottom: 24px;
+    padding-bottom: 12px;
+    border-bottom: 1px solid #eee;
+  }
+
+  .nav-left {
+    display: flex;
+    align-items: baseline;
+    gap: 18px;
+  }
+
+  .nav-left h1 {
+    margin: 0;
+    font-size: 26px;
+  }
+
+  .nav-links {
+    display: flex;
+    gap: 14px;
+    font-size: 14px;
+    flex-wrap: wrap;
+  }
+
+  .nav-links a {
+    padding: 4px 8px;
+    border-radius: 6px;
+    color: #333;
+    text-decoration: none;
+  }
+
+  .nav-links a:hover {
+    background: #f3f4f6;
+  }
+
+  .nav-right {
+    display: flex;
+    gap: 14px;
+    font-size: 14px;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+  }
+
+  .nav-right a {
+    color: #333;
+    text-decoration: none;
+    padding: 4px 8px;
+    border-radius: 6px;
+  }
+
+  .nav-right a:hover {
+    background: #f3f4f6;
+  }
+
+  .nav-right a.primary {
+    background: #0b5fff;
+    color: white;
+    padding: 6px 10px;
+    border-radius: 8px;
+    font-weight: 600;
+  }
+
+  .nav-right a.primary:hover {
+    background: #0847c7;
+  }
+
+  .nav-active {
+    background: #eef2ff;
+    border: 1px solid #dbeafe;
+  }
+</style>
+
+<div class="nav">
+  <div class="nav-left">
+    <h1>{{ page_title or "Review" }}</h1>
+
+    <div class="nav-links">
+      <a href="/review" class="{% if active_nav == 'review' %}nav-active{% endif %}">Parks</a>
+      <a href="/ui/artifacts" class="{% if active_nav == 'artifacts' %}nav-active{% endif %}">Artifacts</a>
+      <a href="/ui/search" class="{% if active_nav == 'search' %}nav-active{% endif %}">Search</a>
+      <a href="/export/csv" class="{% if active_nav == 'export' %}nav-active{% endif %}">Export Building Summaries</a>
+    </div>
+  </div>
+
+  <div class="nav-right">
+    <a href="/docs" target="_blank">API</a>
+    <a href="/capture" class="primary">+ New capture</a>
+  </div>
+</div>
