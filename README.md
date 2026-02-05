@@ -1,180 +1,120 @@
-# Powertown Prospecting MVP
+# Powertown MVP  
+**Local Artifact Ingestion, Search, and Structured Extraction for Energy Infrastructure**
 
-A lightweight internal tool for collecting, organizing, and reviewing field observations about commercial and industrial buildings, with the goal of identifying strong battery storage candidates.
+Powertown MVP is a local-first web application for collecting, reviewing, and extracting structured information from power- and energy-related documents (PDFs, images, and notes).
 
-This project is designed as an MVP to support Powertown’s on-the-ground prospecting workflow: turning messy, multimodal field notes into structured, decision-ready building dossiers.
+It is designed to support workflows such as:
+- utility interconnection review,
+- site feasibility analysis,
+- and early-stage infrastructure prospecting.
 
----
-
-## Problem Context
-
-Powertown teams collect real-world data in industrial parks: notes, photos, conversations, business cards, and informal observations. This information is inherently messy, subjective, and gathered asynchronously by different people.
-
-The challenge is not data collection alone — it’s **organizing and synthesizing that information** so the team can:
-- review what was learned in the field,
-- compare buildings within an industrial park,
-- and prioritize which sites are strong candidates for battery deployment.
-
-This MVP focuses on that core workflow.
+The system combines a FastAPI web server, a background processing worker, local file storage, and optional local LLMs (via `llama.cpp`) to turn unstructured documents into searchable, structured data.
 
 ---
 
-## Design Philosophy
+## Core Capabilities
 
-- **Append-only observations**  
-  Field data should never be overwritten. Observations are timestamped, attributed, and additive.
+### Artifact ingestion
+- Upload PDFs, images, or text notes
+- Attach artifacts to buildings and industrial parks
+- Files stored locally on disk (no cloud dependencies)
 
-- **Multimodal by default**  
-  Notes, photos, and other media are first-class inputs, not afterthoughts.
+### Text extraction
+- Embedded text extraction for PDFs
+- OCR fallback for scanned documents or images
+- Extracted text stored in segmented form
 
-- **Transparent heuristics over black boxes**  
-  Battery readiness is computed using a simple, explainable scoring function rather than ML.
+### Background processing
+- Database-backed job queue
+- Asynchronous worker processes jobs:
+  - text extraction
+  - structured extraction
+  - discovery extraction
+- Retryable and inspectable job history
 
-- **Optimize for speed and clarity**  
-  This is a small internal tool meant to be easy to run, easy to inspect, and easy to extend.
+### Structured extraction
+- Schema-based claim extraction (key–value facts)
+- Confidence scores per claim
+- Designed for power / energy documents (manuals, policies, studies)
+
+### Discovery mode
+- Open-ended extraction for unknown or novel document fields
+- Produces flexible `disc:*` claims
+- Useful for manuals, regulations, and unfamiliar PDFs
+
+### Review & search UI
+- Artifact gallery view
+- Artifact detail pages (file, text, claims, jobs)
+- Keyword search across:
+  - filenames
+  - extracted text
+  - claims
+- Manual re-run of failed jobs from the UI
+
+## Architecture Overview
+Static files are served locally:
+- Artifacts: `/artifact-files/*`
+- Uploads: `/uploads/*`
 
 ---
 
-## Features
+## Requirements
 
-- REST API for:
-  - Creating buildings
-  - Adding observations
-  - Uploading media linked to observations
-- Relational data model (SQLite)
-- Local file storage for media
-- Aggregated “building dossier” views
-- Simple battery readiness scoring
-- Seed data to demonstrate a realistic industrial park workflow
+- Python 3.10+ (3.11 recommended)
+- macOS or Linux
+- SQLite (default) or Postgres
+- Optional: `llama-cpp-python` + GGUF model for LLM-based extraction
 
 ---
 
-## Tech Stack
+## Quick Start (Local Tutorial)
 
-- **Backend:** FastAPI (Python)
-- **Database:** SQLite
-- **ORM:** SQLAlchemy
-- **File storage:** Local filesystem
-- **API docs:** Auto-generated OpenAPI (Swagger UI)
+### 1. Create and activate a virtual environment
 
----
-
-## Quickstart
-
-### 1. Clone the repo
 ```bash
-git clone git@github.com:AengusMcGuinness/powertown-mvp.git
-cd powertown-mvp
-```
-### 2. Create and activate a virtual environment
-```
-python -m venv .venv
+cd powertown
+python3 -m venv .venv
 source .venv/bin/activate
+python -m pip install --upgrade pip
+python -m pip install -r requirements.txt
 ```
-### 3. Install dependencies
+
+### 2. Create a .env file in the repo root:
+```bash
+DATABASE_URL=sqlite:///./demo.db
+
+# Optional (required for structured + discovery extraction)
+LLAMA_GGUF_PATH=/absolute/path/to/model.gguf
+LLAMA_THREADS=8
+LLAMA_N_CTX=4096
+LLAMA_TEMPERATURE=0.1
+LLAMA_MAX_TOKENS=700
 ```
-pip install -r requirements.txt
+If `LLAMA_GGUF_PATH` is not set, structured and discovery extraction will be skipped or fail gracefully.
+
+### 3. Initialize the database
 ```
-### 4. Initialize the database (one-time)
+python -c "from backend.app.db import init_db; init_db()"
 ```
-python -m backend.scripts.init_db
+Verify:
 ```
-This will create a local SQLite database at: `backend/app/app.db`
+sqlite3 demo.db ".tables"
+```
+
+### 4. Seed demo data
+```
+python -m backend.scripts.seed_demo
+```
+This creates:
+- one demo industrial park
+- one or more demo buildings
+
 ### 5. Run the server
 ```
 uvicorn backend.app.main:app --reload
 ```
-# Demo (Recommended)
-
-Run the full demo locally with seeded data:
-
-```bash
-python -m backend.scripts.init_db
-python -m backend.scripts.seed_demo --reset
-uvicorn backend.app.main:app --reload
-```
-Then open:
-- Review home: http://127.0.0.1:8000/review
-- Capture form: http://127.0.0.1:8000/capture
-
-This demo includes:
-- 1 industrial park
-- 8 buildings
-- multiple observations per building
-- attached media
-- readiness scores that respond to observation content
-
-## Battery Readiness Scoring
-
-Each building is assigned a simple, transparent readiness score (0–100) based on observed signals across all notes:
-
-Signals include:
-- **Load indicators** (e.g., manufacturing, cold storage, HVAC)
-- **Electrical infrastructure** (e.g., transformers, switchgear, substations)
-- **On-site generation** (e.g., solar)
-- **Siting space** (e.g., large lots, parking, yards)
-- **Contacts identified** (e.g., facilities manager, business card)
-
-The score is intentionally heuristic and explainable, designed to support human review rather than replace it.
-
-# Bulk Offline Import & Demo Data
-
-Field prospecting often happens offline or asynchronously. To support this workflow, the MVP includes a bulk offline import pipeline that allows teams to upload structured field data after the fact, with or without associated media.
-
-## Bulk Import Options
-
-The application supports two bulk import modes:
-
-- ZIP import (with media) 
-  - Upload a single .zip file containing:
-  - a manifest.csv describing parks, buildings, and observations
-  - any referenced media files (photos, audio, business cards)
-- CSV-only import (no media)
-  - Upload a standalone manifest.csv to create parks, buildings, and observations without attachments.
-
-Both flows deduplicate parks and buildings, create append-only observations, attach media safely, and generate a detailed import report summarizing what was created or skipped.
-
-## Demo Data
-
-The repository includes reproducible demo files to test both bulk import paths:
-```
-demo_data/
-├── with_media/
-│   ├── manifest.csv
-│   ├── transformer.jpg
-│   ├── loading_dock.jpg
-│   ├── audio_note.m4a
-│   └── demo_with_media.zip
-└── csv_only/
-    ├── manifest.csv
-    └── demo_csv_only.zip
-```
-## Try it locally
-
-### 1.  Start the server
-```
-uvicorn backend.app.main:app --reload
-```
-### 2. Open
-```
-http://127.0.0.1:8000/bulk
-```
-### 3. Upload
-Either `demo_data/with_media/demo_with_media.zip` or `demo_data/with_media/demo_with_media.zip`
-After upload, the app displays an Import Report detailing:
-- rows imported vs skipped
-- observations created
-- media files attached or missing
-- affected industrial parks (with links)
-
-## Features
-
-- Server-rendered web UI for field capture and review
-- Append-only observations with timestamping
-- Media upload and inline rendering (photos, audio, cards)
-- Park- and building-level review pages
-- Explainable battery readiness scoring
-- CSV export for downstream mapping and analysis
-- SQLite-backed relational data model
-
-
+Open in your browser:
+- Review UI: http://127.0.0.1:8000/review
+- Artifact gallery: http://127.0.0.1:8000/ui/artifacts
+- Search: http://127.0.0.1:8000/ui/search
+- API docs: http://127.0.0.1:8000/docs
