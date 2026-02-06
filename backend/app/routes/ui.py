@@ -1,6 +1,10 @@
-from __future__ import annotations
-
 from collections import defaultdict
+
+from typing import Optional, List, Any
+import html
+
+from starlette.status import HTTP_303_SEE_OTHER
+from backend.app.services.jobs import enqueue_job
 
 from datetime import datetime
 from typing import Optional
@@ -359,7 +363,7 @@ async def capture_submit(
 
     note_text: Optional[str] = Form(None),
 
-    files: List[UploadFile] = File(default=[]),
+    files: Optional[List[UploadFile]] = File(default=None),
     zip_file: Optional[UploadFile] = File(default=None),
 
     db: Session = Depends(get_db),
@@ -481,21 +485,10 @@ async def capture_submit(
                 if not data:
                     continue
                 # Content-type unknown from zip; guess by extension
-                await _create_file_artifact(Path(name).name, None, data)
+                guessed_mime, _ = mimetypes.guess_type(Path(name).name)
+                await _create_file_artifact(Path(name).name, guessed_mime, data)
 
     return RedirectResponse(url=f"/review/buildings/{building.id}", status_code=HTTP_303_SEE_OTHER)
-
-def _clean_int(s: str | None) -> Optional[int]:
-    if not s:
-        return None
-    s = s.strip()
-    if not s:
-        return None
-    try:
-        return int(s)
-    except Exception:
-        return None
-
 
 def _make_snippet(text: str, q: str, radius: int = 90) -> str:
     """

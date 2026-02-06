@@ -13,6 +13,8 @@ from backend.app import models
 from backend.app.db import get_db
 from backend.app.services.jobs import enqueue_job
 
+from fastapi import Form
+
 templates = Jinja2Templates(directory="backend/app/templates")
 router = APIRouter()
 
@@ -176,4 +178,68 @@ def ui_run_discovery(artifact_id: int, db: Session = Depends(get_db)):
         raise HTTPException(status_code=404, detail="artifact not found")
 
     enqueue_job(db, artifact_id, "extract_discovery")
+    return RedirectResponse(url=f"/ui/artifacts/{artifact_id}", status_code=303)
+
+@router.post("/ui/artifacts/{artifact_id}/retry-failed")
+def ui_retry_failed_jobs(artifact_id: int, db: Session = Depends(get_db)):
+    """
+    For this artifact: look at latest jobs; if any are failed, enqueue the same job_type again.
+    We do NOT edit old job rows; we add new queued jobs (history stays intact).
+    """
+    a = db.get(models.Artifact, artifact_id)
+    if not a:
+        raise HTTPException(status_code=404, detail="artifact not found")
+
+    failed_types = [
+        jt for (jt,) in (
+            db.query(models.ProcessingJob.job_type)
+            .filter(models.ProcessingJob.artifact_id == artifact_id)
+            .filter(models.ProcessingJob.status == "failed")
+            .distinct()
+            .all()
+        )
+    ]
+
+    for jt in failed_types:
+        enqueue_job(db, artifact_id, jt)
+
+    return RedirectResponse(url=f"/ui/artifacts/{artifact_id}", status_code=303)
+
+
+@router.post("/ui/artifacts/{artifact_id}/retry")
+def ui_retry_job_type(
+    artifact_id: int,
+    job_type: str = Form(...),
+    db: Session = Depends(get_db),
+):
+    """
+    Retry a specific job_type for this artifact (even if it didn't fail).
+    """
+    a = db.get(models.Artifact, artifact_id)
+    if not a:
+        raise HTTPException(status_code=404, detail="artifact not found")
+
+    jt = (job_type or "").strip()
+    if not jt:
+        raise HTTPException(status_code=400, detail="job_type required")
+
+    enqueue_job(db, artifact_id, jt)
+    return RedirectResponse(url=f"/ui/artifacts/{artifact_id}", status_code=303)
+
+
+@router.post("/ui/artifacts/{artifact_id}/rerun-pipeline")
+def ui_rerun_pipeline(artifact_id: int, db: Session = Depends(get_db)):
+    """
+    Convenience: rerun the common pipeline. Adjust job types to match your worker registry.
+    """
+    a = db.get(models.Artifact, artifact_id)
+    if not a:
+        raise HTTPException(status_code=404, detail="artifact not found")
+
+    # Order doesn't strictly matter if your worker just pulls queued jobs,
+    # but it's nice to enqueue in a sane sequence.
+    enqueue_job(db, artifact_id, "extract_text")
+    enqueue_job(db, artifact_id, "extract_structured")
+    enqueue_job(db, artifact_id, "extract_discovery")
+
     return RedirectResponse(url=f"/ui/artifacts/{artifact_id}", status_code=303)

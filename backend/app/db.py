@@ -1,14 +1,4 @@
-"""
-Database wiring for the Powertown Prospecting MVP.
-
-- Uses SQLite by default (file-based, no external service required).
-- Exposes:
-    - engine: SQLAlchemy Engine
-    - SessionLocal: session factory
-    - get_db(): FastAPI dependency that yields a session
-    - init_db(): optional helper to create tables (MVP-friendly)
-"""
-
+# backend/app/db.py
 from __future__ import annotations
 
 import os
@@ -17,23 +7,27 @@ from typing import Generator
 
 from dotenv import load_dotenv
 from sqlalchemy import create_engine
-from sqlalchemy.orm import Session, sessionmaker
+from sqlalchemy.orm import sessionmaker, Session
 
-# Load .env from project root (and/or current working directory)
-load_dotenv()
+# 1) Load .env as early as possible.
+#    Use find_dotenv so it works even if you run commands from a subdir.
+load_dotenv(dotenv_path=os.getenv("DOTENV_PATH") or None)
 
-_DEFAULT_DB_PATH = Path.cwd() / "demo.db"
-DB_URL = os.getenv("DATABASE_URL", f"sqlite:///{_DEFAULT_DB_PATH}")
+# 2) Pick a default DB that is NOT inside backend/app/.
+#    This prevents “mystery app.db” from reappearing there.
+_DEFAULT_DB_PATH = Path.cwd() / "demo.db"  # change to data/powertown.db if you prefer
+_DEFAULT_DB_URL = f"sqlite:///{_DEFAULT_DB_PATH.as_posix()}"
 
+DB_URL = os.getenv("DATABASE_URL", _DEFAULT_DB_URL)
+
+# SQLite needs this
 connect_args = {"check_same_thread": False} if DB_URL.startswith("sqlite") else {}
 
-# Ensure parent directory exists for sqlite file
-if DB_URL.startswith("sqlite:///"):
-    db_path = DB_URL.replace("sqlite:///", "", 1)
-    Path(db_path).expanduser().resolve().parent.mkdir(parents=True, exist_ok=True)
-
 engine = create_engine(DB_URL, connect_args=connect_args)
+
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+
+print("[db] DATABASE_URL =", os.getenv("DATABASE_URL"))
 
 
 def get_db() -> Generator[Session, None, None]:
@@ -45,5 +39,6 @@ def get_db() -> Generator[Session, None, None]:
 
 
 def init_db() -> None:
-    from backend.app.models import Base
+    # Import here so models are registered before create_all
+    from backend.app.models import Base  # noqa
     Base.metadata.create_all(bind=engine)

@@ -110,14 +110,14 @@ def transcribe_audio_video(db: Session, artifact: models.Artifact) -> None:
         language = os.getenv("WHISPER_LANGUAGE", WHISPER_LANGUAGE)
 
         model = WhisperModel(model_name, device=device, compute_type=compute_type)
-
+        print(f"[audio] about to transcribe") 
         # segments is a generator of (start,end,text)
         segments, info = model.transcribe(
             str(wav_path),
             language=language,       # None => auto-detect
             vad_filter=True,         # helps for long clips
         )
-
+        print(f"[audio] transcribe returned; iterating segments...", flush=True)
         parts: list[str] = []
         for s in segments:
             # You can include timestamps if you want:
@@ -128,7 +128,7 @@ def transcribe_audio_video(db: Session, artifact: models.Artifact) -> None:
 
         if not transcript:
             transcript = "(no transcript produced)"
-
+        print(f"[audio] transcribe returned; iterating segments...", flush=True)
         # Save transcript in DB
         _upsert_text_segment(db, artifact.id, transcript)
 

@@ -3,6 +3,8 @@ from __future__ import annotations
 import json
 import os
 import re
+import time
+import traceback
 from dataclasses import dataclass
 from typing import Any, Optional
 
@@ -56,16 +58,22 @@ def extract_claims_from_text(db: Session, artifact: models.Artifact) -> None:
         return
 
     text = raw_text[:MAX_CHARS_TO_MODEL]
+    print(f"[structured] START artifact={artifact.id} segs={len(segments)} chars={len(raw_text)}", flush=True)
 
     llm = _get_llm()
     prompt = _build_prompt(text)
+    print(f"[structured] prompt_chars={len(prompt)}", flush=True)
+
+
 
     claims: list[ExtractedClaim] = []
     last_err: Optional[Exception] = None
 
     for _attempt in range(1, MAX_MODEL_ATTEMPTS + 1):
         try:
+            print(f"[structured] attempting to run model")
             out_text = _run_llm(llm, prompt)
+            print(f"[structured] llm returned out_chars={len(out_text)}", flush=True)
             data = _parse_json_loose(out_text)
 
             raw_claims = data.get("claims", [])
@@ -143,18 +151,87 @@ def _get_llm():
         n_gpu_layers=n_gpu_layers,
         logits_all=False,
         vocab_only=False,
-        verbose=False,
+        verbose=True,
     )
     return _llm_singleton
 
 
 def _run_llm(llm, prompt: str) -> str:
-    temperature = float(os.getenv("LLAMA_TEMPERATURE", "0.1"))
-    max_tokens = int(os.getenv("LLAMA_MAX_TOKENS", "700"))
+    print("[structured] ENTER _run_llm", flush=True)
+
+    temp_raw = os.getenv("LLAMA_TEMPERATURE", "0.1")
+    max_raw = os.getenv("LLAMA_MAX_TOKENS", "700")
+    print(f"[structured] env temp={temp_raw!r} max_tokens={max_raw!r}", flush=True)
+
+    temperature = float(temp_raw)
+    max_tokens = int(max_raw)
     stop = ["```", "\n\n\n", "</json>"]
 
-    out = llm(prompt, max_tokens=max_tokens, temperature=temperature, stop=stop)
-    return out["choices"][0]["text"].strip()
+    print("[structured] about to call llm(...)", flush=True)
+    t0 = time.time()
+    try:
+        out = llm(
+            prompt,
+            max_tokens=max_tokens,
+            temperature=temperature,
+            stop=stop,
+        )
+    except Exception as e:
+        print("[structured] llm(...) raised:", repr(e), flush=True)
+        traceback.print_exc()
+        raise
+
+    dt = time.time() - t0
+    print(f"[structured] llm(...) returned in {dt:.2f}s; keys={list(out.keys())}", flush=True)
+
+    text = out["choices"][0]["text"]
+    print(f"[structured] out_text_chars={len(text)}", flush=True)
+    return text.strip()
+
+    # print("[structured] ENTER _run_llm", flush=True)
+
+    # temp_raw = os.getenv("LLAMA_TEMPERATURE", "0.1")
+    # max_raw = os.getenv("LLAMA_MAX_TOKENS", "700")
+
+    # print(
+    #     f"[structured] env LLAMA_TEMPERATURE={temp_raw!r} "
+    #     f"LLAMA_MAX_TOKENS={max_raw!r}",
+    #     flush=True,
+    # )
+
+    # temperature = float(os.getenv("LLAMA_TEMPERATURE", "0.1"))
+    # max_tokens = int(os.getenv("LLAMA_MAX_TOKENS", "700"))
+    # stop = ["```", "\n\n\n", "</json>"]
+
+    # chunks: list[str] = []
+    # last_log = time.time()
+    # print("[structured] calling llama...", flush=True)
+    # # stream=True yields partial chunks
+    # for part in llm(
+    #     prompt,
+    #     max_tokens=max_tokens,
+    #     temperature=temperature,
+    #     stop=stop,
+    #     stream=True,
+    # ):
+    #     delta = part["choices"][0].get("text", "")
+    #     if delta:
+    #         chunks.append(delta)
+
+    #     # periodic progress log so you can *see* tokens coming
+    #     now = time.time()
+    #     if now - last_log > 2.0:
+    #         total = sum(len(c) for c in chunks)
+    #         print(f"[structured] streaming... out_chars={total}", flush=True)
+    #         last_log = now
+
+    # return "".join(chunks).strip()
+#    temperature = float(os.getenv("LLAMA_TEMPERATURE", "0.1"))
+#    max_tokens = int(os.getenv("LLAMA_MAX_TOKENS", "700"))
+#    stop = ["```", "\n\n\n", "</json>"]####
+#
+#    out = llm(prompt, max_tokens=max_tokens, temperature=temperature, stop=stop)
+#    return out["choices"][0]["text"].strip()
 
 
 # --- Prompting ---

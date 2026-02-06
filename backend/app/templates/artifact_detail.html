@@ -38,17 +38,42 @@
         <div>Park: <a href="/review/parks/{{ park.id }}">{{ park.name }}</a></div>
       {% endif %}
     </div>
+<div class="card">
+  <div style="display:flex; justify-content: space-between; align-items:center; gap: 12px;">
+    <strong>Actions</strong>
 
-    <div class="card">
-      <div style="display:flex; justify-content: space-between; align-items:center;">
-        <strong>Actions</strong>
-        <form method="post" action="/ui/artifacts/{{ artifact.id }}/discover">
-          <button type="submit">Run discovery</button>
-        </form>
-      </div>
-      <div class="muted">Discovery creates flexible <code>disc:*</code> claims.</div>
+    <div style="display:flex; gap:10px; flex-wrap: wrap;">
+      <form method="post" action="/ui/artifacts/{{ artifact.id }}/discover">
+        <button type="submit">Run discovery</button>
+      </form>
+
+      <form method="post" action="/ui/artifacts/{{ artifact.id }}/retry-failed">
+        <button type="submit">Retry failed jobs</button>
+      </form>
+
+      <form method="post" action="/ui/artifacts/{{ artifact.id }}/rerun-pipeline">
+        <button type="submit">Rerun pipeline</button>
+      </form>
     </div>
+  </div>
 
+  <div class="muted" style="margin-top: 8px;">
+    Retry creates new queued jobs (keeps history). “Rerun pipeline” queues extract_text → structured → discovery.
+  </div>
+
+  <div style="margin-top: 10px;">
+    <form method="post" action="/ui/artifacts/{{ artifact.id }}/retry" style="display:flex; gap: 10px; align-items: center;">
+      <label class="muted" style="min-width: 130px;">Retry job type:</label>
+      <select name="job_type">
+        <option value="extract_text">extract_text</option>
+        <option value="extract_structured">extract_structured</option>
+        <option value="extract_discovery">extract_discovery</option>
+        <option value="transcribe_audio">transcribe_audio</option>
+      </select>
+      <button type="submit">Retry</button>
+    </form>
+  </div>
+</div>
     <div class="card">
       <strong>Processing jobs</strong>
       {% if jobs|length == 0 %}
@@ -88,15 +113,20 @@
     </div>
 
     <div class="card">
-      <strong>Extracted text</strong>
-      {% if segments|length == 0 %}
-        <div class="muted">No extracted text segments yet.</div>
-      {% else %}
-        {% for s in segments %}
-          <div class="muted">segment {{ s.segment_index }}</div>
-          <pre>{{ s.text }}</pre>
-        {% endfor %}
-      {% endif %}
+  <div><strong>Extracted text</strong></div>
+
+  {% if segments|length == 0 %}
+    <div class="muted">No extracted text segments yet.</div>
+  {% else %}
+    {% for s in segments %}
+      <div class="muted" style="margin-top: 10px;">
+        segment {{ s.segment_index }}
+        {% if s.source_ref %} | {{ s.source_ref }}{% endif %}
+        | {{ s.text|length }} chars
+      </div>
+      <div style="margin-top: 6px; white-space: pre-wrap;">{{ s.text }}</div>
+    {% endfor %}
+  {% endif %}
     </div>
   </body>
 </html>
