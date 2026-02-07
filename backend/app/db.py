@@ -1,44 +1,78 @@
 # backend/app/db.py
+
 from __future__ import annotations
 
 import os
-from pathlib import Path
-from typing import Generator
-
-from dotenv import load_dotenv
 from sqlalchemy import create_engine
-from sqlalchemy.orm import sessionmaker, Session
+from sqlalchemy.orm import sessionmaker, declarative_base
 
-# 1) Load .env as early as possible.
-#    Use find_dotenv so it works even if you run commands from a subdir.
-load_dotenv(dotenv_path=os.getenv("DOTENV_PATH") or None)
+# ------------------------------------------------------------
+# Database URL handling
+# ------------------------------------------------------------
 
-# 2) Pick a default DB that is NOT inside backend/app/.
-#    This prevents “mystery app.db” from reappearing there.
-_DEFAULT_DB_PATH = Path.cwd() / "demo.db"  # change to data/powertown.db if you prefer
-_DEFAULT_DB_URL = f"sqlite:///{_DEFAULT_DB_PATH.as_posix()}"
+# Default: local SQLite file in repo root
+_DEFAULT_DB_URL = "sqlite:///./demo.db"
 
+# Read from environment if provided, otherwise use default
 DB_URL = os.getenv("DATABASE_URL", _DEFAULT_DB_URL)
 
-# SQLite needs this
-connect_args = {"check_same_thread": False} if DB_URL.startswith("sqlite") else {}
-
-engine = create_engine(DB_URL, connect_args=connect_args)
-
-SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
-
-print("[db] DATABASE_URL =", os.getenv("DATABASE_URL"))
+# Optional debug logging (off by default)
+if os.getenv("POWERTOWN_DEBUG_ENV") == "1":
+    print("[db] Using DATABASE_URL:", DB_URL)
 
 
-def get_db() -> Generator[Session, None, None]:
+# ------------------------------------------------------------
+# SQLAlchemy engine + session
+# ------------------------------------------------------------
+
+# SQLite needs special flags for multithreaded FastAPI usage
+_connect_args = {}
+if DB_URL.startswith("sqlite"):
+    _connect_args = {"check_same_thread": False}
+
+engine = create_engine(
+    DB_URL,
+    future=True,
+    echo=False,
+    connect_args=_connect_args,
+)
+
+SessionLocal = sessionmaker(
+    bind=engine,
+    autocommit=False,
+    autoflush=False,
+    future=True,
+)
+
+Base = declarative_base()
+
+
+# ------------------------------------------------------------
+# Database initialization
+# ------------------------------------------------------------
+
+def init_db() -> None:
+    """
+    Initialize database tables.
+
+    Safe to call multiple times.
+    """
+    # Import models here so they are registered with SQLAlchemy
+    from backend.app import models  # noqa: F401
+
+    Base.metadata.create_all(bind=engine)
+
+
+# ------------------------------------------------------------
+# Dependency helper (FastAPI)
+# ------------------------------------------------------------
+
+def get_db():
+    """
+    FastAPI dependency that yields a DB session.
+    """
     db = SessionLocal()
     try:
         yield db
     finally:
         db.close()
-
-
-def init_db() -> None:
-    # Import here so models are registered before create_all
-    from backend.app.models import Base  # noqa
-    Base.metadata.create_all(bind=engine)

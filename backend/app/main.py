@@ -17,10 +17,60 @@ import subprocess
 import sys
 import signal
 
+
+from contextlib import asynccontextmanager
+
+_worker_process: subprocess.Popen | None = None
+_worker_lock = Path("data/worker.lock")  # prevents double-spawn under reload
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+        global _worker_process
+        # 1) Ensure DB schema exists
+        init_db()
+
+        # 2) Start worker (by default)
+        _worker_lock.parent.mkdir(parents=True, exist_ok=True)
+
+        if _worker_lock.exists():
+            print("[main] worker already running (lock exists)", flush=True)
+        else:
+            _worker_lock.write_text(str(os.getpid()))
+            print("[main] starting background worker...", flush=True)
+
+            _worker_process = subprocess.Popen(
+                [
+                    sys.executable,
+                    "-m",
+                    "backend.scripts.worker",
+                    "--db",
+                    os.getenv("DATABASE_URL", "sqlite:///./demo.db"),
+                ],
+                stdout=None,   # show worker logs
+                stderr=None,
+                env=os.environ.copy(),
+            )
+
+        try:
+            yield
+        finally:
+            # 3) Shutdown cleanup
+            try:
+                _worker_lock.unlink(missing_ok=True)
+            except Exception:
+                pass
+
+            if _worker_process and _worker_process.poll() is None:
+                print("[main] stopping background worker...", flush=True)
+                _worker_process.terminate()
+
+    
 app = FastAPI(
     title="Powertown MVP",
     version="0.1.0",
     description="Minimal internal platform to capture and review multimodal building observations.",
+    lifespan=lifespan,
 )
 
 # Templates
@@ -55,12 +105,6 @@ app.add_middleware(
 )
 
 
-@app.on_event("startup")
-def _startup() -> None:
-    # Create tables if they don't exist (MVP convenience)
-    init_db()
-
-
 @app.get("/health")
 def health() -> dict:
     return {"status": "ok"}
@@ -86,29 +130,3 @@ app.include_router(export.router, prefix="/export", tags=["export"])
 app.include_router(ui.router, tags=["ui"])
 app.include_router(ui_artifacts_router, tags=["ui"])
 
-_worker_process: subprocess.Popen | None = None
-
-@app.on_event("startup")
-def start_worker():
-    global _worker_process
-
-    # Only start worker in the *actual* server process, not the reloader
-    if os.environ.get("UVICORN_RELOAD") == "true":
-        # This is the reloader process; skip
-        return
-
-    print("Starting background worker process...")
-
-    _worker_process = subprocess.Popen(
-        [sys.executable, "-m", "backend.scripts.worker"],
-        stdout=sys.stdout,
-        stderr=sys.stderr,
-        env=os.environ.copy(),
-    )
-
-@app.on_event("shutdown")
-def stop_worker():
-    global _worker_process
-    if _worker_process and _worker_process.poll() is None:
-        print("Stopping background worker...")
-        _worker_process.terminate()

@@ -1,15 +1,15 @@
+# backend/app/models.py
 from __future__ import annotations
 
 import datetime as dt
 from datetime import datetime
 
 from sqlalchemy import Column, DateTime, ForeignKey, Integer, String, Text, UniqueConstraint, Float
-from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 
+from backend.app.db import Base
 
-class Base(DeclarativeBase):
-    pass
-
+from typing import Optional
 
 class BuildingScoreCache(Base):
     __tablename__ = "building_score_cache"
@@ -54,7 +54,6 @@ class BuildingScore(Base):
 
 class IndustrialPark(Base):
     """A site / industrial park."""
-
     __tablename__ = "industrial_parks"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
@@ -64,8 +63,8 @@ class IndustrialPark(Base):
         DateTime, default=datetime.utcnow, nullable=False
     )
 
-    buildings: Mapped[list[Building]] = relationship(back_populates="industrial_park")
-    artifacts: Mapped[list[Artifact]] = relationship(
+    buildings: Mapped[list["Building"]] = relationship(back_populates="industrial_park")
+    artifacts: Mapped[list["Artifact"]] = relationship(
         "Artifact", back_populates="industrial_park"
     )
 
@@ -85,27 +84,18 @@ class Building(Base):
         DateTime, default=datetime.utcnow, nullable=False
     )
 
-    industrial_park: Mapped[IndustrialPark] = relationship(back_populates="buildings")
-    artifacts: Mapped[list[Artifact]] = relationship(
+    industrial_park: Mapped["IndustrialPark"] = relationship(back_populates="buildings")
+    artifacts: Mapped[list["Artifact"]] = relationship(
         "Artifact", back_populates="building"
     )
 
 
 class Artifact(Base):
-    """Generic evidence object (upload anything).
-
-    Artifacts can be attached to a site (IndustrialPark) and/or a Building.
-
-    Notes:
-      - Observations are intentionally removed; "notes" are stored as text artifacts.
-      - MediaAsset is replaced by Artifact (kind=image/audio/pdf/cad/etc).
-    """
-
+    """Generic evidence object (upload anything)."""
     __tablename__ = "artifacts"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-
-    # Associations (optional to keep ingestion flexible)
+    
     industrial_park_id: Mapped[int | None] = mapped_column(
         ForeignKey("industrial_parks.id"), nullable=True
     )
@@ -113,17 +103,14 @@ class Artifact(Base):
         ForeignKey("buildings.id"), nullable=True
     )
 
-    # Artifact payload
     kind: Mapped[str] = mapped_column(String(50), nullable=False, default="file")
     mime_type: Mapped[str | None] = mapped_column(String(120), nullable=True)
     original_filename: Mapped[str | None] = mapped_column(String(300), nullable=True)
 
-    # For file artifacts
     storage_path: Mapped[str | None] = mapped_column(String(700), nullable=True)
     bytes_size: Mapped[int | None] = mapped_column(Integer, nullable=True)
     sha256: Mapped[str | None] = mapped_column(String(64), nullable=True)
 
-    # For text artifacts (notes)
     text_content: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     status: Mapped[str] = mapped_column(String(30), nullable=False, default="uploaded")
@@ -132,10 +119,13 @@ class Artifact(Base):
         DateTime, default=datetime.utcnow, nullable=False
     )
 
-    industrial_park: Mapped[IndustrialPark | None] = relationship(
-        "IndustrialPark", back_populates="artifacts"
+    industrial_park: Mapped[Optional["IndustrialPark"]] = relationship(
+    "IndustrialPark", back_populates="artifacts"
     )
-    building: Mapped[Building | None] = relationship("Building", back_populates="artifacts")
+    building: Mapped[Optional["Building"]] = relationship(
+        "Building", back_populates="artifacts"
+    )
+
 
 class ProcessingJob(Base):
     __tablename__ = "processing_jobs"
@@ -166,6 +156,7 @@ class ArtifactTextSegment(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
 
     artifact: Mapped["Artifact"] = relationship("Artifact")
+
 
 class Claim(Base):
     __tablename__ = "claims"

@@ -284,10 +284,9 @@ def seed_showroom(db: Session, *, enqueue: bool = True) -> int:
 
     images, pdfs, videos, audios = _collect_showroom_assets()
 
-    if not images:
+    if not (images or pdfs or videos or audios):
         raise FileNotFoundError(
-            f"No showroom images found in {SHOWROOM_IMAGES_DIR}\n"
-            "Add at least 1 image (jpg/png/webp) to demo_data/showroom_images/."
+            "No showroom assets found. Add files under demo_data/showroom_{images,pdfs,video,audio}/"
         )
 
     # Park-level note
@@ -325,56 +324,27 @@ def seed_showroom(db: Session, *, enqueue: bool = True) -> int:
                 "Follow-up: identify interconnection constraints and peak demand.",
             ],
             want_pdfs=True,
-            want_video=False,
-            want_audio=True,
-        ),
-        BuildingSpec(
-            name="Harbor Metal Works",
-            address="Unit 7A, corner lot",
-            notes=[
-                "Welding + industrial equipment suggests meaningful load; yard is limited.",
-                "Overhead three-phase lines on adjacent street; confirm transformer ownership (utility vs customer).",
-            ],
-            want_pdfs=False,
-            want_video=True,
-            want_audio=False,
-        ),
-        BuildingSpec(
-            name="South Bay Logistics",
-            address="Warehouse row, unit 12",
-            notes=[
-                "High-bay warehouse; forklifts and distribution activity. Large parking lot with an unused corner.",
-                "Need follow-up with facilities for service size and spare panel capacity.",
-            ],
-            want_pdfs=True,
-            want_video=False,
-            want_audio=False,
-        ),
-        BuildingSpec(
-            name="Granite Paper Co.",
-            address="Main plant, north side",
-            notes=[
-                "HVAC + chiller plant visible; transformer warning labels near loading area. Likely high service capacity.",
-                "Mentioned interest in demand management; contact email collected.",
-            ],
-            want_pdfs=True,
             want_video=True,
             want_audio=True,
         ),
     ]
 
+    # Helper: split a list into N nearly-even chunks (no duplication)
+    def split_even(items: list[Path], n: int) -> list[list[Path]]:
+        chunks: list[list[Path]] = [[] for _ in range(n)]
+        for idx, item in enumerate(items):
+            chunks[idx % n].append(item)
+        return chunks
+
+    n_buildings = len(building_specs)
+    images_by_b = split_even(images, n_buildings)
+    pdfs_by_b = split_even(pdfs, n_buildings)
+    videos_by_b = split_even(videos, n_buildings)
+    audios_by_b = split_even(audios, n_buildings)
+
     created_buildings = 0
 
-    # Deterministic “rotation” through assets so every building gets variety
-    def pick_many(pool: list[Path], start_idx: int, k: int) -> list[Path]:
-        if not pool or k <= 0:
-            return []
-        out: list[Path] = []
-        for j in range(k):
-            out.append(pool[(start_idx + j) % len(pool)])
-        return out
-
-    for i, spec in enumerate(building_specs, start=0):
+    for bi, spec in enumerate(building_specs):
         existing = (
             db.query(models.Building)
             .filter(
@@ -409,8 +379,8 @@ def seed_showroom(db: Session, *, enqueue: bool = True) -> int:
 
         slug = spec.name.replace(" ", "_").lower()
 
-        # 2 images per building (always)
-        for img in pick_many(images, start_idx=i * 2, k=2):
+        # Attach split assets (no duplication)
+        for img in images_by_b[bi]:
             _create_file_artifact_from_path(
                 db,
                 industrial_park_id=park.id,
@@ -420,9 +390,8 @@ def seed_showroom(db: Session, *, enqueue: bool = True) -> int:
                 enqueue=enqueue,
             )
 
-        # PDFs (up to 2)
-        if spec.want_pdfs and pdfs:
-            for p in pick_many(pdfs, start_idx=i, k=min(2, len(pdfs))):
+        if spec.want_pdfs:
+            for p in pdfs_by_b[bi]:
                 _create_file_artifact_from_path(
                     db,
                     industrial_park_id=park.id,
@@ -432,32 +401,29 @@ def seed_showroom(db: Session, *, enqueue: bool = True) -> int:
                     enqueue=enqueue,
                 )
 
-        # Video (at most 1)
-        if spec.want_video and videos:
-            v = pick_many(videos, start_idx=i, k=1)[0]
-            _create_file_artifact_from_path(
-                db,
-                industrial_park_id=park.id,
-                building_id=building.id,
-                src_path=v,
-                dest_filename=f"{slug}__{v.name}",
-                enqueue=enqueue,
-            )
+        if spec.want_video:
+            for v in videos_by_b[bi]:
+                _create_file_artifact_from_path(
+                    db,
+                    industrial_park_id=park.id,
+                    building_id=building.id,
+                    src_path=v,
+                    dest_filename=f"{slug}__{v.name}",
+                    enqueue=enqueue,
+                )
 
-        # Audio (at most 1) – only if audio files exist
-        if spec.want_audio and audios:
-            a = pick_many(audios, start_idx=i, k=1)[0]
-            _create_file_artifact_from_path(
-                db,
-                industrial_park_id=park.id,
-                building_id=building.id,
-                src_path=a,
-                dest_filename=f"{slug}__{a.name}",
-                enqueue=enqueue,
-            )
+        if spec.want_audio:
+            for a in audios_by_b[bi]:
+                _create_file_artifact_from_path(
+                    db,
+                    industrial_park_id=park.id,
+                    building_id=building.id,
+                    src_path=a,
+                    dest_filename=f"{slug}__{a.name}",
+                    enqueue=enqueue,
+                )
 
     return created_buildings
-
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Seed a realistic showroom demo dataset.")

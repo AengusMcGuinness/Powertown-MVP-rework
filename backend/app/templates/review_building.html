@@ -177,9 +177,28 @@
           <strong>Evidence</strong>
           <span class="pill">{{ artifacts|length }} total</span>
         </div>
-        <div class="row">
-          <a class="btn" href="/ui/artifacts?building_id={{ building.id }}">Open full gallery</a>
-        </div>
+	<div class="row" style="align-items: stretch;">
+  <a class="btn" href="/ui/artifacts?building_id={{ building.id }}">Open full gallery</a>
+
+  <!-- Upload to this building -->
+  <form id="uploadForm" method="post" action="/artifacts/upload" enctype="multipart/form-data" class="row">
+    <input type="hidden" name="building_id" value="{{ building.id }}" />
+    <input type="hidden" name="kind" value="file" />
+
+    <input
+      type="file"
+      name="file"
+      required
+      style="min-width: 260px;"
+      title="Upload a file to this building"
+    />
+
+    <button class="btn primary" type="submit">Upload</button>
+  </form>
+</div>
+
+<div id="uploadStatus" class="muted small" style="margin-top: 8px; display:none;"></div>
+
       </div>
 
       <div class="hr"></div>
@@ -283,104 +302,48 @@
           </div>
         {% endfor %}
       </div>
-    {% endif %}
+      {% endif %}
+      <script>
+  (function () {
+    const form = document.getElementById("uploadForm");
+    const status = document.getElementById("uploadStatus");
+    if (!form) return;
+
+    form.addEventListener("submit", async (e) => {
+      e.preventDefault();
+
+      status.style.display = "block";
+      status.textContent = "Uploading…";
+
+      try {
+        const fd = new FormData(form);
+
+        const resp = await fetch(form.action, {
+          method: "POST",
+          body: fd,
+        });
+
+        if (!resp.ok) {
+          const txt = await resp.text();
+          status.textContent = "Upload failed: " + txt;
+          return;
+        }
+
+        const data = await resp.json();
+        status.textContent = "Uploaded artifact #" + data.id + ". Redirecting…";
+
+        // Option A: go back to this building page
+        window.location.href = "/review/buildings/{{ building.id }}";
+
+        // Option B (comment A and use this): go to artifact detail
+        // window.location.href = "/ui/artifacts/" + data.id;
+
+      } catch (err) {
+        status.textContent = "Upload failed: " + (err?.message || String(err));
+      }
+    });
+  })();
+</script>
   </body>
 </html>
 
-<!-- <!doctype html> -->
-<!-- <html> -->
-<!--   <head> -->
-<!--     <meta charset="utf-8" /> -->
-<!--     <title>Powertown MVP — Building Dossier</title> -->
-<!--     <meta name="viewport" content="width=device-width, initial-scale=1" /> -->
-<!--     <style> -->
-<!--       body { font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; margin: 20px; max-width: 980px; } -->
-<!--       .muted { color: #666; } -->
-<!--       .card { border: 1px solid #ddd; border-radius: 12px; padding: 14px; margin-top: 14px; } -->
-<!--       img { max-width: 100%; border-radius: 10px; border: 1px solid #eee; } -->
-<!--       .media-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 10px; margin-top: 10px; } -->
-<!--       a { text-decoration: none; } -->
-<!--       code { background: #f6f6f6; padding: 2px 6px; border-radius: 6px; } -->
-<!--       .pill { display:inline-block; padding: 2px 8px; border: 1px solid #ddd; border-radius: 999px; font-size: 12px; margin-left: 8px; } -->
-<!--     </style> -->
-<!--   </head> -->
-<!--   <body> -->
-<!--     <h1>{{ building.name }}</h1> -->
-
-<!--     <div class="card"> -->
-<!--       <div style="display:flex; justify-content: space-between; align-items: center; gap: 12px;"> -->
-<!--         <div> -->
-<!--           <strong>Status:</strong> -->
-<!--           <span class="muted">{{ building.status }}</span> -->
-<!--         </div> -->
-
-<!--         <form method="post" action="/review/buildings/{{ building.id }}/status" style="display:flex; gap: 8px;"> -->
-<!--           <select name="status"> -->
-<!--             <option value="new" {% if building.status == "new" %}selected{% endif %}>new</option> -->
-<!--             <option value="reviewed" {% if building.status == "reviewed" %}selected{% endif %}>reviewed</option> -->
-<!--             <option value="shortlisted" {% if building.status == "shortlisted" %}selected{% endif %}>shortlisted</option> -->
-<!--           </select> -->
-<!--           <button type="submit">Update</button> -->
-<!--         </form> -->
-<!--       </div> -->
-<!--     </div> -->
-
-<!--     <div class="card"> -->
-<!--       <div><strong>Battery Readiness</strong></div> -->
-<!--       <div style="font-size: 28px; font-weight: 700;">{{ score.score }}/100</div> -->
-<!--       <div class="muted">Confidence: {{ score.confidence }}</div> -->
-<!--       <ul> -->
-<!--         {% for d in score.drivers %} -->
-<!--           <li>{{ d }}</li> -->
-<!--         {% endfor %} -->
-<!--       </ul> -->
-<!--     </div> -->
-
-<!--     <p class="muted">{{ building.address or "" }}</p> -->
-
-<!--     <p> -->
-<!--       <a href="/capture">← New capture</a> -->
-<!--       <span class="muted"> | </span> -->
-<!--       <a href="/review/parks/{{ building.industrial_park_id }}">← Back to site</a> -->
-<!--       <span class="muted"> | </span> -->
-<!--       <a href="/review">← Review</a> -->
-<!--       <span class="muted"> | </span> -->
-<!--       <a href="/docs" target="_blank">API docs</a> -->
-<!--     </p> -->
-
-<!--     <h2>Artifacts</h2> -->
-
-<!--     {% if artifacts|length == 0 %} -->
-<!--       <p class="muted">No artifacts yet. Add a note or upload evidence via <a href="/capture">Capture</a>.</p> -->
-<!--     {% endif %} -->
-
-<!--     {% for a in artifacts %} -->
-<!--       <div class="card"> -->
-<!--         <div> -->
-<!--           <strong>#{{ a.id }}</strong> -->
-<!--           <span class="pill">{{ a.kind }}</span> -->
-<!--           <span class="muted"> — {{ a.created_at }}</span> -->
-<!--         </div> -->
-
-<!--         {% if a.kind == "text" and a.text_content %} -->
-<!--           <p style="white-space: pre-wrap;">{{ a.text_content }}</p> -->
-<!--           {% elif a.storage_path %} -->
-<!--           {% if a.kind in ["image", "photo"] %} -->
-<!--             <a href="{{ a.storage_path }}" target="_blank"> -->
-<!--               <img src="{{ a.storage_path }}" alt="image" /> -->
-<!--             </a> -->
-<!--             <div class="muted"><a href="{{ a.storage_path }}" target="_blank">open</a></div> -->
-<!--           {% elif a.kind == "audio" %} -->
-<!--             <audio controls src="{{ a.storage_path }}" style="width:100%; margin-top: 10px;"></audio> -->
-<!--             <div class="muted"><a href="{{ a.storage_path }}" target="_blank">download/open</a></div> -->
-<!--           {% else %} -->
-<!--             <div><strong>{{ a.original_filename or "file" }}</strong></div> -->
-<!--             <div class="muted"><a href="{{ a.storage_path }}" target="_blank">open</a></div> -->
-<!--           {% endif %} -->
-<!--         {% else %} -->
-<!--           <p class="muted">(empty artifact)</p> -->
-<!--         {% endif %} -->
-<!--       </div> -->
-<!--     {% endfor %} -->
-<!--   </body> -->
-<!-- </html> -->
