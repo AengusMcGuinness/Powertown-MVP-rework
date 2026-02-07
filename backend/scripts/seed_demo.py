@@ -3,10 +3,9 @@ from __future__ import annotations
 import argparse
 import hashlib
 import mimetypes
-import shutil
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Iterable, Optional
+from typing import Optional, Sequence
 
 from sqlalchemy.orm import Session
 
@@ -26,25 +25,21 @@ DEMO_PARK_LOCATION = "Fall River, MA (demo)"
 
 
 # ------------------------------------------------------------
-# Asset locations (relative to repo root)
+# Repo + showroom asset locations (robust to where script is run)
+#   backend/scripts/seed_demo.py -> repo root is parents[2]
 # ------------------------------------------------------------
-REPO_ROOT = Path.cwd()
+REPO_ROOT = Path(__file__).resolve().parents[2]
+DEMO_DATA_DIR = REPO_ROOT / "demo_data"
 
-# These already exist in your repo (per your tree dump)
-WITH_MEDIA_DIR = REPO_ROOT / "demo_data" / "with_media"
-
-DEFAULT_IMAGE_1 = WITH_MEDIA_DIR / "transformer.jpg"
-DEFAULT_IMAGE_2 = WITH_MEDIA_DIR / "loading_dock.jpg"
-DEFAULT_AUDIO_1 = WITH_MEDIA_DIR / "audio_note.m4a"
-
-# Optional: put real PDFs here to showcase embedded-text extraction + OCR fallbacks.
-# Example: create demo_data/showroom_pdfs/ and drop in:
-#   generation_interconnect.pdf
-#   data_acquisition_map.pdf
-#   power_use_acquisition_map.pdf
-SHOWROOM_PDFS_DIR = REPO_ROOT / "demo_data" / "showroom_pdfs"
+SHOWROOM_IMAGES_DIR = DEMO_DATA_DIR / "showroom_images"
+SHOWROOM_PDFS_DIR = DEMO_DATA_DIR / "showroom_pdfs"
+SHOWROOM_VIDEO_DIR = DEMO_DATA_DIR / "showroom_video"
+SHOWROOM_AUDIO_DIR = DEMO_DATA_DIR / "showroom_audio"
 
 
+# --------------------------
+# Helpers
+# --------------------------
 def _sha256(data: bytes) -> str:
     return hashlib.sha256(data).hexdigest()
 
@@ -66,6 +61,45 @@ def _delete_artifact_folder(artifact_id: int) -> None:
         folder.rmdir()
     except Exception:
         pass
+
+
+def _mime_for(filename: str) -> Optional[str]:
+    mt, _ = mimetypes.guess_type(filename)
+    return mt
+
+
+def _guess_kind(mime_type: Optional[str], filename: str) -> str:
+    mt = (mime_type or "").lower()
+    fn = filename.lower()
+
+    if mt == "application/pdf" or fn.endswith(".pdf"):
+        return "pdf"
+    if mt.startswith("image/") or fn.endswith((".png", ".jpg", ".jpeg", ".webp")):
+        return "image"
+    if mt.startswith("audio/") or fn.endswith((".m4a", ".mp3", ".wav", ".aac")):
+        return "audio"
+    if mt.startswith("video/") or fn.endswith((".mp4", ".mov", ".mkv")):
+        return "video"
+    if fn.endswith(".txt"):
+        return "text"
+    return "file"
+
+
+def _list_files(dirpath: Path, exts: Sequence[str]) -> list[Path]:
+    if not dirpath.exists():
+        return []
+    out: list[Path] = []
+    for ext in exts:
+        out.extend([p for p in dirpath.glob(f"*{ext}") if p.is_file()])
+    return sorted(out)
+
+
+def _collect_showroom_assets() -> tuple[list[Path], list[Path], list[Path], list[Path]]:
+    images = _list_files(SHOWROOM_IMAGES_DIR, (".jpg", ".jpeg", ".png", ".webp"))
+    pdfs = _list_files(SHOWROOM_PDFS_DIR, (".pdf",))
+    videos = _list_files(SHOWROOM_VIDEO_DIR, (".mp4", ".mov", ".mkv"))
+    audios = _list_files(SHOWROOM_AUDIO_DIR, (".m4a", ".mp3", ".wav", ".aac"))
+    return images, pdfs, videos, audios
 
 
 def _get_or_create_demo_park(db: Session) -> models.IndustrialPark:
@@ -113,8 +147,7 @@ def _reset_demo_data(db: Session) -> None:
     )
     building_ids = [b.id for b in buildings]
 
-    artifacts = []
-
+    artifacts: list[models.Artifact] = []
     artifacts.extend(
         db.query(models.Artifact)
         .filter(models.Artifact.industrial_park_id == park.id)
@@ -130,7 +163,6 @@ def _reset_demo_data(db: Session) -> None:
     artifact_ids = sorted({a.id for a in artifacts})
 
     if artifact_ids:
-        # dependent tables first
         db.query(models.ProcessingJob).filter(
             models.ProcessingJob.artifact_id.in_(artifact_ids)
         ).delete(synchronize_session=False)
@@ -160,28 +192,6 @@ def _reset_demo_data(db: Session) -> None:
 
     for aid in artifact_ids:
         _delete_artifact_folder(aid)
-
-
-def _guess_kind(mime_type: Optional[str], filename: str) -> str:
-    mt = (mime_type or "").lower()
-    fn = filename.lower()
-
-    if mt == "application/pdf" or fn.endswith(".pdf"):
-        return "pdf"
-    if mt.startswith("image/") or fn.endswith((".png", ".jpg", ".jpeg", ".webp")):
-        return "image"
-    if mt.startswith("audio/") or fn.endswith((".m4a", ".mp3", ".wav", ".aac")):
-        return "audio"
-    if mt.startswith("video/") or fn.endswith((".mp4", ".mov", ".mkv")):
-        return "video"
-    if fn.endswith(".txt"):
-        return "text"
-    return "file"
-
-
-def _mime_for(filename: str) -> Optional[str]:
-    mt, _ = mimetypes.guess_type(filename)
-    return mt
 
 
 def _create_text_artifact(
@@ -259,45 +269,39 @@ def _create_file_artifact_from_path(
     return a
 
 
-def _collect_showroom_pdfs() -> list[Path]:
-    if not SHOWROOM_PDFS_DIR.exists():
-        return []
-    pdfs = sorted([p for p in SHOWROOM_PDFS_DIR.glob("*.pdf") if p.is_file()])
-    return pdfs
-
-
-@dataclass
+@dataclass(frozen=True)
 class BuildingSpec:
     name: str
     address: str
     notes: list[str]
     want_pdfs: bool = True
+    want_video: bool = True
+    want_audio: bool = True
 
 
 def seed_showroom(db: Session, *, enqueue: bool = True) -> int:
     park = _get_or_create_demo_park(db)
 
-    # Park-level doc (nice for gallery + search)
+    images, pdfs, videos, audios = _collect_showroom_assets()
+
+    if not images:
+        raise FileNotFoundError(
+            f"No showroom images found in {SHOWROOM_IMAGES_DIR}\n"
+            "Add at least 1 image (jpg/png/webp) to demo_data/showroom_images/."
+        )
+
+    # Park-level note
     _create_text_artifact(
         db,
         industrial_park_id=park.id,
         text=(
-            "Demo showroom: This site contains a mix of notes, photos, audio clips, and PDFs.\n"
-            "Use /ui/artifacts to browse, /ui/search to find keywords like 'transformer', 'interconnection', 'PJM', etc.\n"
-            "Run the worker to process OCR/transcription/claims."
+            "Demo showroom: mixed notes + media stored under demo_data/showroom_*.\n"
+            "Browse: /ui/artifacts\n"
+            "Search: /ui/search (try: transformer, interconnect, feasibility, panel)\n"
+            "Run worker to process OCR/transcription/claims."
         ),
         enqueue=enqueue,
     )
-
-    # Ensure assets exist (fail loudly so demo isn't “empty”)
-    for p in [DEFAULT_IMAGE_1, DEFAULT_IMAGE_2, DEFAULT_AUDIO_1]:
-        if not p.exists():
-            raise FileNotFoundError(
-                f"Expected demo asset not found: {p}\n"
-                "Make sure demo_data/with_media exists in your repo."
-            )
-
-    showroom_pdfs = _collect_showroom_pdfs()
 
     building_specs: list[BuildingSpec] = [
         BuildingSpec(
@@ -305,54 +309,72 @@ def seed_showroom(db: Session, *, enqueue: bool = True) -> int:
             address="Dock-facing frontage, Unit A",
             notes=[
                 "Multiple loading docks; steady truck traffic. Large paved staging yard suitable for containerized storage.",
-                "Transformer pad visible near south wall; ask for single-line diagram and service voltage (likely three-phase).",
-                "Contact: facilities manager mentioned interest in demand response / peak shaving."
+                "Transformer/panel photo captured; ask for single-line diagram + service voltage (likely three-phase).",
+                "Facilities manager mentioned interest in peak shaving / demand response.",
             ],
             want_pdfs=True,
+            want_video=True,
+            want_audio=True,
         ),
         BuildingSpec(
             name="Riverside Cold Storage",
             address="Rear entrance off service lane",
             notes=[
-                "Refrigeration compressors/chillers running. High industrial load profile likely.",
-                "Switchgear cabinet and utility room access on east side. Plenty of open yard space behind building.",
-                "Follow-up: identify utility interconnection constraints and peak demand."
+                "Refrigeration compressors/chillers running. Industrial load profile likely.",
+                "Switchgear cabinet/utility room access on east side. Open yard space behind building.",
+                "Follow-up: identify interconnection constraints and peak demand.",
             ],
             want_pdfs=True,
+            want_video=False,
+            want_audio=True,
         ),
         BuildingSpec(
             name="Harbor Metal Works",
             address="Unit 7A, corner lot",
             notes=[
-                "Welding + industrial equipment suggests meaningful load. Limited yard; might need creative siting.",
+                "Welding + industrial equipment suggests meaningful load; yard is limited.",
                 "Overhead three-phase lines on adjacent street; confirm transformer ownership (utility vs customer).",
             ],
             want_pdfs=False,
+            want_video=True,
+            want_audio=False,
         ),
         BuildingSpec(
             name="South Bay Logistics",
             address="Warehouse row, unit 12",
             notes=[
                 "High-bay warehouse; forklifts and distribution activity. Large parking lot with an unused corner.",
-                "No electrical details yet. Need follow-up with facilities for service size and panel capacity.",
+                "Need follow-up with facilities for service size and spare panel capacity.",
             ],
-            want_pdfs=False,
+            want_pdfs=True,
+            want_video=False,
+            want_audio=False,
         ),
         BuildingSpec(
             name="Granite Paper Co.",
             address="Main plant, north side",
             notes=[
-                "HVAC + chiller plant visible; transformer warning labels near loading dock. Likely high service capacity.",
+                "HVAC + chiller plant visible; transformer warning labels near loading area. Likely high service capacity.",
                 "Mentioned interest in demand management; contact email collected.",
             ],
             want_pdfs=True,
+            want_video=True,
+            want_audio=True,
         ),
     ]
 
     created_buildings = 0
 
-    # Reuse the same real media assets but rename per-building so the UI looks realistic
-    for i, spec in enumerate(building_specs, start=1):
+    # Deterministic “rotation” through assets so every building gets variety
+    def pick_many(pool: list[Path], start_idx: int, k: int) -> list[Path]:
+        if not pool or k <= 0:
+            return []
+        out: list[Path] = []
+        for j in range(k):
+            out.append(pool[(start_idx + j) % len(pool)])
+        return out
+
+    for i, spec in enumerate(building_specs, start=0):
         existing = (
             db.query(models.Building)
             .filter(
@@ -375,7 +397,7 @@ def seed_showroom(db: Session, *, enqueue: bool = True) -> int:
             db.refresh(building)
             created_buildings += 1
 
-        # Notes => text artifacts (these drive scoring immediately)
+        # Notes as text artifacts
         for t in spec.notes:
             _create_text_artifact(
                 db,
@@ -385,46 +407,54 @@ def seed_showroom(db: Session, *, enqueue: bool = True) -> int:
                 enqueue=enqueue,
             )
 
-        # Photos (real JPGs)
-        _create_file_artifact_from_path(
-            db,
-            industrial_park_id=park.id,
-            building_id=building.id,
-            src_path=DEFAULT_IMAGE_1,
-            dest_filename=f"{spec.name.replace(' ', '_').lower()}__transformer.jpg",
-            enqueue=enqueue,
-        )
-        _create_file_artifact_from_path(
-            db,
-            industrial_park_id=park.id,
-            building_id=building.id,
-            src_path=DEFAULT_IMAGE_2,
-            dest_filename=f"{spec.name.replace(' ', '_').lower()}__loading_dock.jpg",
-            enqueue=enqueue,
-        )
+        slug = spec.name.replace(" ", "_").lower()
 
-        # Audio (real .m4a)
-        _create_file_artifact_from_path(
-            db,
-            industrial_park_id=park.id,
-            building_id=building.id,
-            src_path=DEFAULT_AUDIO_1,
-            dest_filename=f"{spec.name.replace(' ', '_').lower()}__walkthrough_audio.m4a",
-            enqueue=enqueue,
-        )
+        # 2 images per building (always)
+        for img in pick_many(images, start_idx=i * 2, k=2):
+            _create_file_artifact_from_path(
+                db,
+                industrial_park_id=park.id,
+                building_id=building.id,
+                src_path=img,
+                dest_filename=f"{slug}__{img.name}",
+                enqueue=enqueue,
+            )
 
-        # Optional PDFs (if you provided any)
-        if spec.want_pdfs and showroom_pdfs:
-            # attach up to 2 PDFs per building for variety
-            for p in showroom_pdfs[:2]:
+        # PDFs (up to 2)
+        if spec.want_pdfs and pdfs:
+            for p in pick_many(pdfs, start_idx=i, k=min(2, len(pdfs))):
                 _create_file_artifact_from_path(
                     db,
                     industrial_park_id=park.id,
                     building_id=building.id,
                     src_path=p,
-                    dest_filename=f"{spec.name.replace(' ', '_').lower()}__{p.name}",
+                    dest_filename=f"{slug}__{p.name}",
                     enqueue=enqueue,
                 )
+
+        # Video (at most 1)
+        if spec.want_video and videos:
+            v = pick_many(videos, start_idx=i, k=1)[0]
+            _create_file_artifact_from_path(
+                db,
+                industrial_park_id=park.id,
+                building_id=building.id,
+                src_path=v,
+                dest_filename=f"{slug}__{v.name}",
+                enqueue=enqueue,
+            )
+
+        # Audio (at most 1) – only if audio files exist
+        if spec.want_audio and audios:
+            a = pick_many(audios, start_idx=i, k=1)[0]
+            _create_file_artifact_from_path(
+                db,
+                industrial_park_id=park.id,
+                building_id=building.id,
+                src_path=a,
+                dest_filename=f"{slug}__{a.name}",
+                enqueue=enqueue,
+            )
 
     return created_buildings
 
@@ -452,10 +482,12 @@ def main() -> None:
         print("  - Review home:        http://127.0.0.1:8000/review")
         print("  - Artifact gallery:   http://127.0.0.1:8000/ui/artifacts")
         print("  - Search:             http://127.0.0.1:8000/ui/search")
-        if SHOWROOM_PDFS_DIR.exists():
-            print(f"PDF folder: {SHOWROOM_PDFS_DIR} (add PDFs here for richer demos)")
-        else:
-            print(f"Tip: create {SHOWROOM_PDFS_DIR} and drop a few real PDFs in it for a stronger demo.")
+        print()
+        print("Showroom asset dirs:")
+        print(f"  images: {SHOWROOM_IMAGES_DIR}")
+        print(f"  pdfs:   {SHOWROOM_PDFS_DIR}")
+        print(f"  video:  {SHOWROOM_VIDEO_DIR}")
+        print(f"  audio:  {SHOWROOM_AUDIO_DIR} (optional)")
     finally:
         db.close()
 
