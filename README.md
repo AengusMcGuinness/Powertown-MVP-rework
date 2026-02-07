@@ -128,11 +128,11 @@ LLAMA_MAX_TOKENS=700
 
 ## Quick Start (Local Tutorial)
 
-### 1. Create and activate a virtual environment
+### 1. Clone the repo and create a virtual environment
 
 
 ```bash
-cd powertown
+cd Powertown-MVP-rework
 python3 -m venv .venv
 source .venv/bin/activate
 python -m pip install --upgrade pip
@@ -162,11 +162,53 @@ This creates:
 
 ### 5. Run the server
 ```
-uvicorn backend.app.main:app --reload
+python -m uvicorn backend.app.main:app --reload
 ```
 Open in your browser:
 - Review UI: http://127.0.0.1:8000/review
 - Artifact gallery: http://127.0.0.1:8000/ui/artifacts
 - Search: http://127.0.0.1:8000/ui/search
 - API docs: http://127.0.0.1:8000/docs
+
+## Future Work
+The current system is intentionally local and minimal, but its architecture is designed to evolve toward a production-scale ingestion and decision-support platform. The following areas represent the most important next steps.
+
+### Natural-language and semantic search
+Search is currently implemented as keyword and substring matching over filenames, extracted text, and structured claims. While simple and transparent, this approach does not capture semantic intent and requires users to know which terms to search for.
+
+Future versions would introduce semantic search using embeddings over extracted text segments and claims, enabling natural-language queries such as “sites with high industrial load and available electrical infrastructure.” A hybrid approach (BM25 + vector search) would preserve deterministic keyword behavior while improving recall and ranking quality. The existing text segmentation and claim models are already structured in a way that supports embedding-based indexing without schema changes.
+
+### LLM integration and reliability
+Structured and discovery extraction currently rely on local LLMs via `llama.cpp`. While useful for offline experimentation, this path is slow, hardware-dependent, and fragile for large documents. Some extraction paths are currently unreliable or partially broken due to model and context limitations.
+
+Future iterations would introduce a clean abstraction layer for multiple LLM backends, including hosted providers such as OpenAI. This would allow routing high-value or long-context jobs to hosted models while retaining local models for lightweight or offline use. Moving LLM calls out of the critical path would significantly improve throughput, observability, and failure handling.
+
+### Scalable artifact storage
+Artifacts are currently stored on the local filesystem and served directly by the FastAPI application. This simplifies development but does not scale across machines or deployments.
+
+A production-ready version would migrate artifact storage to an object store such as Amazon S3 (or compatible systems like MinIO). Artifacts would be addressed by content hash or stable IDs, with signed URLs for access. This change would:
+	- decouple storage from compute
+	- enable horizontal scaling of workers and web servers
+	- allow safe handling of large media and PDFs
+	- simplify backups and lifecycle management
+
+The current storage abstraction is intentionally narrow to make this transition straightforward.
+
+### Background processing and job execution
+The worker system is currently a single-process, polling-based executor backed by SQLite. This is sufficient for an MVP but limits throughput and resilience.
+
+Future work would include:
+	- moving job state to a centralized database or queue (e.g. Postgres + advisory locks, or a message queue)
+	- parallel job execution
+	- better job visibility and metrics
+	- explicit backoff and retry policies per processor
+
+These changes become necessary once document volume or extraction complexity increases.
+
+### Query-time reasoning and evidence synthesis
+The system currently extracts evidence but does not synthesize answers across artifacts at query time. Future versions could support natural-language questions answered using extracted claims and text segments, with explicit citations back to source artifacts. This would turn Powertown from an ingestion and review tool into a lightweight decision-support system.
+
+### Summary
+The MVP prioritizes clarity, traceability, and local reproducibility. Future work focuses on semantic understanding, scalable storage, reliable LLM integration, and production-grade job execution. Most current limitations are deliberate engineering tradeoffs rather than fundamental constraints, and the existing architecture is designed to support these upgrades without major rewrites.
+
 
